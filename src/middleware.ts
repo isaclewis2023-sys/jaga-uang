@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 
-const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET ?? 'fallback-secret-change-in-production-32chars'
-)
+const jwtSecret = process.env.JWT_SECRET
+if (!jwtSecret) throw new Error('JWT_SECRET environment variable is not set')
+const SECRET = new TextEncoder().encode(jwtSecret)
 const COOKIE_NAME = 'jaga-uang-token'
 
 const PUBLIC_PATHS = ['/login', '/setup', '/api/auth/login', '/api/auth/logout', '/api/setup']

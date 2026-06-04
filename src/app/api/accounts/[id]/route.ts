@@ -9,12 +9,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const body = await req.json()
     const now = new Date().toISOString()
 
+    // Only allow safe fields — balance is managed by transactions, isActive by DELETE
+    const { name, type, icon, color, description } = body
+    const allowed: Record<string, unknown> = {}
+    if (name !== undefined) allowed.name = name
+    if (type !== undefined) allowed.type = type
+    if (icon !== undefined) allowed.icon = icon
+    if (color !== undefined) allowed.color = color
+    if (description !== undefined) allowed.description = description
+
+    const [existing] = await db.select().from(accounts).where(eq(accounts.id, id))
+    if (!existing) return NextResponse.json({ error: 'Akun tidak ditemukan' }, { status: 404 })
+
     await db.update(accounts)
-      .set({ ...body, updatedAt: now })
+      .set({ ...allowed, updatedAt: now })
       .where(eq(accounts.id, id))
 
     const [row] = await db.select().from(accounts).where(eq(accounts.id, id))
-    if (!row) return NextResponse.json({ error: 'Akun tidak ditemukan' }, { status: 404 })
     return NextResponse.json(row)
   } catch (e) {
     console.error(e)

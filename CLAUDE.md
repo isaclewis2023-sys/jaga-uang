@@ -123,8 +123,22 @@ Access via `const { t } = useLanguage()` in client components.
 - Middleware checks JWT on every request to protected routes
 - No public API endpoints except `/api/auth/*`, `/api/setup`
 
+## Security Notes (Detail)
+
+- `JWT_SECRET` env var is **required** — app throws at startup if missing (no fallback)
+- `PATCH /api/accounts/[id]` only accepts: `name`, `type`, `icon`, `color`, `description` — balance/isActive cannot be bypassed
+- Transaction insert + balance update are atomic via `db.batch()`
+- Budget upsert (delete+insert) is atomic via `db.batch()`
+- Recurring rule processing: each rule runs in its own try/catch — one failure won't block others
+
 ## Last Updated
 
-2026-06-04 — Initial implementation complete. All pages functional.
-Features: Dashboard, Transactions CRUD, Accounts CRUD, Reports (1M/3M/6M/1Y/Custom),
-Budget tracking, Financial Goals, Recurring transactions, Bilingual (ID/EN), Export JSON.
+2026-06-04 — Bug fix pass complete.
+- Fixed JWT fallback secret vulnerability (middleware.ts, auth.ts)
+- Fixed race conditions: transactions/balance, budget upsert, recurring processing all use db.batch()
+- Fixed accounts PATCH to whitelist allowed fields
+- Fixed recurring per-item error isolation
+- Fixed dashboard timezone bug in monthly transaction filter
+- Optimized health score budget loop (N+1 → single Map pass)
+- Added noRecurring translation key (id.ts, en.ts)
+- Replaced hardcoded strings with translation keys (goals, settings)

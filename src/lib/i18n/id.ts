@@ -191,6 +191,7 @@ const id = {
     nextDue: 'Jatuh Tempo',
     active: 'Aktif',
     inactive: 'Nonaktif',
+    noRecurring: 'Belum ada transaksi berulang',
   },
   health: {
     score: 'Skor',

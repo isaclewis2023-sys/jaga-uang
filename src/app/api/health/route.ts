@@ -35,15 +35,15 @@ export async function GET() {
     // 2. Budget adherence (25 pts)
     let budgetScore = 25
     if (allBudgets.length > 0) {
-      const onBudgetCount = await Promise.all(
-        allBudgets.map(async (b) => {
-          const spent = monthTxs
-            .filter((t) => t.categoryId === b.categoryId && t.type === 'expense')
-            .reduce((s, t) => s + t.amount, 0)
-          return spent <= b.amount ? 1 : 0
-        })
-      )
-      const ratio = onBudgetCount.reduce((a: number, b: number) => a + b, 0) / allBudgets.length
+      // Pre-compute spending per category in a single pass to avoid N+1 filtering
+      const spentByCategory = new Map<string, number>()
+      for (const t of monthTxs) {
+        if (t.type === 'expense' && t.categoryId) {
+          spentByCategory.set(t.categoryId, (spentByCategory.get(t.categoryId) ?? 0) + t.amount)
+        }
+      }
+      const onBudget = allBudgets.filter((b) => (spentByCategory.get(b.categoryId) ?? 0) <= b.amount).length
+      const ratio = onBudget / allBudgets.length
       budgetScore = Math.round(25 * ratio)
     }
 

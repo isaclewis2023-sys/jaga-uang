@@ -1,9 +1,9 @@
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
 
-const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET ?? 'fallback-secret-change-in-production-32chars'
-)
+const jwtSecret = process.env.JWT_SECRET
+if (!jwtSecret) throw new Error('JWT_SECRET environment variable is not set')
+const SECRET = new TextEncoder().encode(jwtSecret)
 
 const COOKIE_NAME = 'jaga-uang-token'
 const EXPIRES_IN = '7d'

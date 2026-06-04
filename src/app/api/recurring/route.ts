@@ -71,39 +71,46 @@ export async function PUT() {
       .where(lte(recurringRules.nextDue, today))
 
     const processed = []
+    const errors = []
     for (const rule of due) {
       if (!rule.isActive) continue
       if (rule.endDate && rule.nextDue > rule.endDate) continue
 
-      const txId = generateId()
-      const now = new Date().toISOString()
-      await db.insert(transactions).values({
-        id: txId,
-        accountId: rule.accountId,
-        categoryId: rule.categoryId,
-        type: rule.type,
-        amount: rule.amount,
-        description: rule.description,
-        date: rule.nextDue,
-        notes: 'Transaksi berulang otomatis',
-        isRecurring: true,
-        recurringId: rule.id,
-        createdAt: now,
-        updatedAt: now,
-      })
+      try {
+        const txId = generateId()
+        const now = new Date().toISOString()
+        const delta = rule.type === 'income' ? rule.amount : -rule.amount
+        const nextDue = getNextDue(rule.nextDue, rule.frequency)
 
-      const delta = rule.type === 'income' ? rule.amount : -rule.amount
-      await db.update(accounts)
-        .set({ balance: sql`${accounts.balance} + ${delta}` })
-        .where(eq(accounts.id, rule.accountId))
+        await db.batch([
+          db.insert(transactions).values({
+            id: txId,
+            accountId: rule.accountId,
+            categoryId: rule.categoryId,
+            type: rule.type,
+            amount: rule.amount,
+            description: rule.description,
+            date: rule.nextDue,
+            notes: 'Transaksi berulang otomatis',
+            isRecurring: true,
+            recurringId: rule.id,
+            createdAt: now,
+            updatedAt: now,
+          }),
+          db.update(accounts)
+            .set({ balance: sql`${accounts.balance} + ${delta}` })
+            .where(eq(accounts.id, rule.accountId)),
+          db.update(recurringRules).set({ nextDue }).where(eq(recurringRules.id, rule.id)),
+        ])
 
-      const nextDue = getNextDue(rule.nextDue, rule.frequency)
-      await db.update(recurringRules).set({ nextDue }).where(eq(recurringRules.id, rule.id))
-
-      processed.push(rule.id)
+        processed.push(rule.id)
+      } catch (err) {
+        console.error(`Failed to process recurring rule ${rule.id}:`, err)
+        errors.push(rule.id)
+      }
     }
 
-    return NextResponse.json({ processed: processed.length })
+    return NextResponse.json({ processed: processed.length, errors: errors.length })
   } catch (e) {
     console.error(e)
     return NextResponse.json({ error: 'Gagal memproses recurring' }, { status: 500 })

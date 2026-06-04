@@ -223,7 +223,7 @@ export default function GoalsPage() {
                             <div className="flex gap-2 text-xs font-mono mt-1.5" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
                               {daysLeft !== null && (
                                 <span className={`matrix-badge ${daysLeft < 0 ? 'text-[#ff2055]' : 'text-[#ffd700]'}`} style={{ background: 'rgba(255,215,0,0.08)', border: '1px solid rgba(255,215,0,0.2)' }}>
-                                  {daysLeft < 0 ? 'TERLAMBAT' : `${daysLeft} ${t.goals.daysLeft}`}
+                                  {daysLeft < 0 ? t.goals.overdue.toUpperCase() : `${daysLeft} ${t.goals.daysLeft}`}
                                 </span>
                               )}
                               {monthlyNeeded && (

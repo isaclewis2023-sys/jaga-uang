@@ -207,7 +207,7 @@ export default function SettingsPage() {
             </div>
           </div>
           {recurring.length === 0 ? (
-            <p className="text-[#3a5c3a] font-mono text-sm text-center py-4" style={{ fontFamily: 'JetBrains Mono, monospace' }}>Belum ada transaksi berulang</p>
+            <p className="text-[#3a5c3a] font-mono text-sm text-center py-4" style={{ fontFamily: 'JetBrains Mono, monospace' }}>{t.settings.noRecurring}</p>
           ) : (
             <div className="space-y-2">
               {recurring.map((r) => (

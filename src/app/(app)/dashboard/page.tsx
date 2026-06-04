@@ -163,8 +163,9 @@ export default function DashboardPage() {
   const month = today.getMonth() + 1
   const year = today.getFullYear()
   const monthTxs = transactions.filter((t) => {
-    const d = new Date(t.date)
-    return d.getMonth() + 1 === month && d.getFullYear() === year
+    // Compare date strings directly to avoid timezone shifts on date-only values
+    const [y, m] = t.date.split('-').map(Number)
+    return m === month && y === year
   })
   const monthIncome = monthTxs.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0)
   const monthExpense = monthTxs.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0)

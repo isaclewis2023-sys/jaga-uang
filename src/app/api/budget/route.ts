@@ -47,23 +47,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Data tidak lengkap' }, { status: 400 })
     }
 
-    // Upsert: delete existing then insert
-    await db.delete(budgets).where(and(
-      eq(budgets.categoryId, categoryId),
-      eq(budgets.month, month),
-      eq(budgets.year, year)
-    ))
-
     const id = generateId()
     const now = new Date().toISOString()
-    await db.insert(budgets).values({
-      id, categoryId,
-      amount: Number(amount),
-      month: Number(month),
-      year: Number(year),
-      createdAt: now,
-      updatedAt: now,
-    })
+
+    // Upsert via batch: delete + insert atomically
+    await db.batch([
+      db.delete(budgets).where(and(
+        eq(budgets.categoryId, categoryId),
+        eq(budgets.month, month),
+        eq(budgets.year, year)
+      )),
+      db.insert(budgets).values({
+        id, categoryId,
+        amount: Number(amount),
+        month: Number(month),
+        year: Number(year),
+        createdAt: now,
+        updatedAt: now,
+      }),
+    ])
 
     const [row] = await db.select().from(budgets).where(eq(budgets.id, id))
     return NextResponse.json(row, { status: 201 })

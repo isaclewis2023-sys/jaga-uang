@@ -191,6 +191,7 @@ const en = {
     nextDue: 'Next Due',
     active: 'Active',
     inactive: 'Inactive',
+    noRecurring: 'No recurring transactions yet',
   },
   health: {
     score: 'Score',

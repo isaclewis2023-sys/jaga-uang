@@ -61,23 +61,24 @@ export async function POST(req: NextRequest) {
     const id = generateId()
     const now = new Date().toISOString()
 
-    await db.insert(transactions).values({
-      id, accountId, categoryId, type,
-      amount: Number(amount),
-      description,
-      date,
-      notes: notes ?? null,
-      isRecurring: false,
-      recurringId: null,
-      createdAt: now,
-      updatedAt: now,
-    })
-
-    // Update account balance
+    // Insert transaction and update balance atomically via batch
     const delta = type === 'income' ? Number(amount) : -Number(amount)
-    await db.update(accounts)
-      .set({ balance: sql`${accounts.balance} + ${delta}`, updatedAt: now })
-      .where(eq(accounts.id, accountId))
+    await db.batch([
+      db.insert(transactions).values({
+        id, accountId, categoryId, type,
+        amount: Number(amount),
+        description,
+        date,
+        notes: notes ?? null,
+        isRecurring: false,
+        recurringId: null,
+        createdAt: now,
+        updatedAt: now,
+      }),
+      db.update(accounts)
+        .set({ balance: sql`${accounts.balance} + ${delta}`, updatedAt: now })
+        .where(eq(accounts.id, accountId)),
+    ])
 
     const [row] = await db
       .select({ transaction: transactions, account: accounts, category: categories })
