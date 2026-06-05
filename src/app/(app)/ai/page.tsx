@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, X, Check, RotateCcw } from 'lucide-react'
+import { Send, X, Check, Square } from 'lucide-react'
 import AriaFace, { FaceExpression } from '@/components/AriaFace'
 import { useLanguage } from '@/hooks/useLanguage'
 import { formatIDR, formatDate } from '@/lib/utils'
@@ -20,6 +20,7 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+  suggestions?: string[]
 }
 
 interface TransactionConfirm {
@@ -29,6 +30,33 @@ interface TransactionConfirm {
   categoryName: string
   accountName: string
   date: string
+}
+
+interface TransferConfirm {
+  fromAccountName: string
+  toAccountName: string
+  amount: number
+  description: string
+  date: string
+}
+
+type FinancialContext = {
+  netWorth: number
+  savingsRate: number
+  monthIncome: number
+  monthExpense: number
+  monthNet: number
+  lastMonthIncome?: number
+  lastMonthExpense?: number
+  avgDailyExpense?: number
+  projectedMonthExpense?: number
+  daysLeftInMonth?: number
+  accounts: Array<{ id: string; name: string; type: string; balance: number }>
+  categories: Array<{ id: string; name: string; type: string }>
+  budgets: Array<{ category: string; limit: number; spent: number; pct: number }>
+  goals: Array<{ name: string; target: number; current: number; pct: number; deadline?: string; isCompleted: boolean }>
+  upcomingRecurring?: Array<{ description: string; amount: number; type: string; nextDue: string; account: string }>
+  today: string
 }
 
 function parseTransactionConfirm(text: string): { clean: string; confirm: TransactionConfirm | null } {
@@ -43,13 +71,98 @@ function parseTransactionConfirm(text: string): { clean: string; confirm: Transa
   }
 }
 
+function parseTransferConfirm(text: string): { clean: string; transfer: TransferConfirm | null } {
+  const match = text.match(/<transfer_confirm>([\s\S]*?)<\/transfer_confirm>/)
+  if (!match) return { clean: text, transfer: null }
+  try {
+    const transfer = JSON.parse(match[1].trim()) as TransferConfirm
+    const clean = text.replace(/<transfer_confirm>[\s\S]*?<\/transfer_confirm>/, '').trim()
+    return { clean, transfer }
+  } catch {
+    return { clean: text, transfer: null }
+  }
+}
+
+function parseSuggestions(text: string): { clean: string; suggestions: string[] } {
+  const match = text.match(/<suggestions>([\s\S]*?)<\/suggestions>/)
+  if (!match) return { clean: text, suggestions: [] }
+  try {
+    const suggestions = JSON.parse(match[1].trim()) as string[]
+    const clean = text.replace(/<suggestions>[\s\S]*?<\/suggestions>/, '').trim()
+    return { clean, suggestions: Array.isArray(suggestions) ? suggestions.slice(0, 3) : [] }
+  } catch {
+    return { clean: text, suggestions: [] }
+  }
+}
+
+function parseAllTags(text: string): {
+  clean: string
+  confirm: TransactionConfirm | null
+  transfer: TransferConfirm | null
+  suggestions: string[]
+} {
+  const { clean: c1, confirm } = parseTransactionConfirm(text)
+  const { clean: c2, transfer } = parseTransferConfirm(c1)
+  const { clean, suggestions } = parseSuggestions(c2)
+  return { clean, confirm, transfer, suggestions }
+}
+
 function detectExpression(text: string): FaceExpression {
   const lower = text.toLowerCase()
   if (/bagus|hebat|selamat|mantap|luar biasa|terima kasih|senang|optimal/.test(lower)) return 'happy'
   if (/maaf|sedih|buruk|rugi|deficit|melebihi|peringatan|hati-hati/.test(lower)) return 'sad'
   if (/wow|luar biasa|tidak percaya|mengejutkan/.test(lower)) return 'surprised'
-  if (/perhatian|peringatan|bahaya|kritis|waspada|berlebihan/.test(lower)) return 'warning'
+  if (/perhatian|peringatan|bahaya|kritis|waspada|berlebihan|darurat/.test(lower)) return 'warning'
   return 'talking'
+}
+
+function generateGreeting(data: FinancialContext): string {
+  const lines: string[] = []
+  lines.push(`ANALISIS SELESAI. Selamat datang, Operator.\n`)
+  lines.push(`Kekayaan bersih kamu saat ini **${formatIDR(data.netWorth)}** dengan tingkat tabungan bulan ini **${data.savingsRate}%**.`)
+
+  // MoM comparison
+  if (data.lastMonthExpense && data.lastMonthExpense > 0 && data.monthExpense > 0) {
+    const diff = data.monthExpense - data.lastMonthExpense
+    const pct = Math.abs(Math.round((diff / data.lastMonthExpense) * 100))
+    if (pct > 5) {
+      lines.push(diff > 0
+        ? `\n⚠ Pengeluaran bulan ini naik **${pct}%** dibanding bulan lalu (${formatIDR(data.lastMonthExpense)} → ${formatIDR(data.monthExpense)}).`
+        : `\n✔ Pengeluaran bulan ini turun **${pct}%** dibanding bulan lalu — bagus!`)
+    }
+  }
+
+  // Budget warnings
+  const criticalBudgets = data.budgets?.filter(b => b.pct >= 80) ?? []
+  criticalBudgets.forEach(b => {
+    const remaining = b.limit - b.spent
+    lines.push(`\n⚠ PERINGATAN: Budget **${b.category}** sudah **${b.pct}%** terpakai (sisa ${formatIDR(remaining)} dari ${formatIDR(b.limit)}).`)
+  })
+
+  // Goal deadline warnings
+  if (data.today) {
+    const today = new Date(data.today)
+    data.goals?.filter(g => !g.isCompleted && g.deadline && g.pct < 70).forEach(g => {
+      const deadline = new Date(g.deadline!)
+      const daysLeft = Math.ceil((deadline.getTime() - today.getTime()) / 86400000)
+      if (daysLeft > 0 && daysLeft <= 30) {
+        const remaining = g.target - g.current
+        const weeksLeft = Math.max(1, Math.ceil(daysLeft / 7))
+        const perWeek = Math.ceil(remaining / weeksLeft)
+        lines.push(`\n⚠ Goal **${g.name}** deadline ${daysLeft} hari lagi, baru **${g.pct}%** tercapai — perlu **${formatIDR(perWeek)}/minggu** untuk mengejar target.`)
+      }
+    })
+  }
+
+  // Upcoming recurring
+  if (data.upcomingRecurring && data.upcomingRecurring.length > 0) {
+    const upcoming = data.upcomingRecurring.slice(0, 3)
+    const labels = upcoming.map(r => `**${r.description}** (${formatIDR(r.amount)}) — ${r.nextDue}`).join(', ')
+    lines.push(`\n📋 Tagihan jatuh tempo 7 hari ke depan: ${labels}.`)
+  }
+
+  lines.push(`\nAda yang ingin kamu tanyakan atau analisis?`)
+  return lines.join('')
 }
 
 const BOOT_MESSAGES = [
@@ -59,15 +172,19 @@ const BOOT_MESSAGES = [
   '> AUTENTIKASI OPERATOR: DITERIMA',
   '> MENGHUBUNGKAN KE DATABASE KEUANGAN...',
   '> MEMUAT RIWAYAT TRANSAKSI...',
-  '> KALIBRASI MODUL ANALISIS...',
-  '> ARIA FINANCIAL SYSTEM v2.0 - SIAP',
+  '> KALIBRASI MODUL ANALISIS PROAKTIF...',
+  '> ARIA FINANCIAL SYSTEM v3.0 - SIAP',
 ]
 
 const QUICK_ACTIONS: { n: number; label: string; prompt: string }[] = [
-  { n: 1, label: 'LAPORAN BULANAN',  prompt: 'Buatkan laporan keuangan bulan ini untuk saya.' },
-  { n: 2, label: 'STATUS ANGGARAN',  prompt: 'Bagaimana status anggaran saya bulan ini?' },
-  { n: 3, label: 'PROGRES TUJUAN',   prompt: 'Tunjukkan progres tujuan keuangan saya.' },
-  { n: 4, label: 'TIPS HEMAT',       prompt: 'Berikan tips hemat yang relevan dengan kondisi keuangan saya.' },
+  { n: 1, label: 'LAPORAN BULANAN',    prompt: 'Buatkan laporan keuangan bulan ini untuk saya.' },
+  { n: 2, label: 'STATUS ANGGARAN',    prompt: 'Bagaimana status anggaran saya bulan ini? Sebutkan yang sudah kritis.' },
+  { n: 3, label: 'PROGRES TUJUAN',     prompt: 'Tunjukkan progres tujuan keuangan saya dan apakah saya on-track.' },
+  { n: 4, label: 'TIPS HEMAT',         prompt: 'Berikan tips hemat yang relevan dengan kondisi keuangan saya saat ini.' },
+  { n: 5, label: 'PREDIKSI BULAN INI', prompt: 'Berdasarkan pengeluaran saya hingga hari ini, prediksi total pengeluaran bulan ini dan apakah saya perlu khawatir.' },
+  { n: 6, label: 'BANDINGKAN BULAN',   prompt: 'Bandingkan keuangan bulan ini vs bulan lalu secara detail.' },
+  { n: 7, label: 'UPCOMING BILLS',     prompt: 'Transaksi berulang apa yang jatuh tempo minggu ini? Berapa total yang perlu saya siapkan?' },
+  { n: 8, label: 'SKOR KESEHATAN',     prompt: 'Berikan skor kesehatan keuangan saya dari 1-100 dengan penjelasan dan rekomendasi perbaikan.' },
 ]
 
 const CHAT_STORAGE_KEY = 'aria-chat-v1'
@@ -80,28 +197,30 @@ export default function AIPage() {
   const [expression, setExpression] = useState<FaceExpression>('idle')
   const [isTalking, setIsTalking] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
-  const [context, setContext] = useState<Record<string, unknown> | null>(null)
+  const [context, setContext] = useState<FinancialContext | null>(null)
   const [bootPhase, setBootPhase] = useState<'booting' | 'ready'>('booting')
   const [bootLines, setBootLines] = useState<string[]>([])
   const [typewriterLine, setTypewriterLine] = useState('')
   const [pendingConfirm, setPendingConfirm] = useState<TransactionConfirm | null>(null)
+  const [pendingTransfer, setPendingTransfer] = useState<TransferConfirm | null>(null)
   const [confirmLoading, setConfirmLoading] = useState(false)
   const [confirmResult, setConfirmResult] = useState<'success' | 'error' | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const talkingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const skipBootRef = useRef(false)    // true when restoring from localStorage
-  const isRestoredRef = useRef(false)  // true when messages already loaded from storage
+  const skipBootRef = useRef(false)
+  const isRestoredRef = useRef(false)
+  const abortControllerRef = useRef<AbortController | null>(null)
   const today = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase()
 
-  // Restore chat from localStorage — runs first, before boot sequence
+  // Restore chat from localStorage
   useEffect(() => {
     try {
       const raw = localStorage.getItem(CHAT_STORAGE_KEY)
       if (!raw) return
       const { messages: saved, cachedContext } = JSON.parse(raw) as {
-        messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; timestamp: string }>
-        cachedContext: Record<string, unknown> | null
+        messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; timestamp: string; suggestions?: string[] }>
+        cachedContext: FinancialContext | null
       }
       if (!saved?.length) return
       skipBootRef.current = true
@@ -110,14 +229,13 @@ export default function AIPage() {
       if (cachedContext) setContext(cachedContext)
       setBootPhase('ready')
       setExpression('idle')
-      // Re-fetch context silently to get latest financial data
       fetch('/api/ai/context').then(r => r.json()).then(setContext).catch(() => {})
     } catch {}
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Boot sequence — typewriter per character
+  // Boot sequence typewriter
   useEffect(() => {
-    if (skipBootRef.current) return  // already restored from localStorage, skip boot
+    if (skipBootRef.current) return
     let lineIdx = 0
     let charIdx = 0
     let cancelled = false
@@ -146,39 +264,37 @@ export default function AIPage() {
     return () => { cancelled = true }
   }, [])
 
-  // Load context after boot — skipped when restored from localStorage
+  // Load context after boot
   useEffect(() => {
     if (bootPhase !== 'ready') return
-    if (isRestoredRef.current) return  // already fetched silently in mount effect
+    if (isRestoredRef.current) return
     fetch('/api/ai/context')
       .then(r => r.json())
-      .then(data => {
+      .then((data: FinancialContext) => {
         setContext(data)
         const greet: Message = {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: `ANALISIS SELESAI. Selamat datang, Operator.\n\nKekayaan bersih kamu saat ini **${formatIDR(data.netWorth)}** dengan tingkat tabungan bulan ini **${data.savingsRate}%**.\n\nAda yang ingin kamu tanyakan atau analisis?`,
+          content: generateGreeting(data),
           timestamp: new Date(),
         }
         setMessages([greet])
-        setExpression(data.savingsRate >= 20 ? 'happy' : 'idle')
+        setExpression(data.savingsRate >= 20 ? 'happy' : data.savingsRate < 0 ? 'warning' : 'idle')
       })
       .catch(() => {
         setMessages([{
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: 'SISTEM AKTIF. Saya ARIA, siap membantu keuangan kamu. Koneksi database tidak tersedia saat ini.',
+          content: 'SISTEM AKTIF. Saya ARIA v3.0, siap membantu keuangan kamu. Koneksi database tidak tersedia saat ini.',
           timestamp: new Date(),
         }])
       })
   }, [bootPhase, lang])
 
-  // Auto scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Persist chat to localStorage whenever messages or context changes
   useEffect(() => {
     if (messages.length === 0 || !context) return
     try {
@@ -190,6 +306,7 @@ export default function AIPage() {
   }, [messages, context])
 
   const clearConversation = useCallback(() => {
+    abortControllerRef.current?.abort()
     localStorage.removeItem(CHAT_STORAGE_KEY)
     skipBootRef.current = false
     isRestoredRef.current = false
@@ -201,7 +318,9 @@ export default function AIPage() {
     setExpression('idle')
     setIsTalking(false)
     setPendingConfirm(null)
+    setPendingTransfer(null)
     setConfirmResult(null)
+    setIsStreaming(false)
   }, [])
 
   const triggerTalking = useCallback((durationMs: number) => {
@@ -213,11 +332,16 @@ export default function AIPage() {
     }, durationMs)
   }, [])
 
-  const sendMessage = useCallback(async () => {
-    const text = input.trim()
+  const stopStreaming = useCallback(() => {
+    abortControllerRef.current?.abort()
+  }, [])
+
+  const sendMessage = useCallback(async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim()
     if (!text || isStreaming) return
     setInput('')
     setPendingConfirm(null)
+    setPendingTransfer(null)
     setConfirmResult(null)
 
     const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: text, timestamp: new Date() }
@@ -228,12 +352,16 @@ export default function AIPage() {
     const assistantId = crypto.randomUUID()
     setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '', timestamp: new Date() }])
 
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
+
     try {
       const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }))
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: history, context }),
+        signal: abortController.signal,
       })
 
       if (!res.ok) throw new Error('API error')
@@ -241,63 +369,74 @@ export default function AIPage() {
       const reader = res.body!.getReader()
       const decoder = new TextDecoder()
       let fullText = ''
+      let aborted = false
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const chunk = decoder.decode(value, { stream: true })
-        const lines = chunk.split('\n')
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const data = line.slice(6)
-          if (data === '[DONE]') continue
-          try {
-            const parsed = JSON.parse(data)
-            if (parsed.text) {
-              fullText += parsed.text
-              const { clean } = parseTransactionConfirm(fullText)
-              setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: clean } : m))
-              if (!isTalking) {
-                setExpression(detectExpression(fullText))
-                triggerTalking(2000)
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          const chunk = decoder.decode(value, { stream: true })
+          const lines = chunk.split('\n')
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue
+            const data = line.slice(6)
+            if (data === '[DONE]') continue
+            try {
+              const parsed = JSON.parse(data)
+              if (parsed.text) {
+                fullText += parsed.text
+                const { clean } = parseAllTags(fullText)
+                setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: clean } : m))
+                if (!isTalking) {
+                  setExpression(detectExpression(fullText))
+                  triggerTalking(2000)
+                }
               }
-            }
-          } catch {}
+            } catch {}
+          }
         }
+      } catch (readErr) {
+        if ((readErr as Error)?.name === 'AbortError') aborted = true
+        else throw readErr
       }
 
-      const { clean, confirm } = parseTransactionConfirm(fullText)
-      setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: clean } : m))
-      if (confirm) setPendingConfirm(confirm)
-
-      setExpression(detectExpression(fullText))
-      triggerTalking(1500)
-    } catch {
+      const { clean, confirm, transfer, suggestions } = parseAllTags(fullText)
+      const finalContent = aborted ? clean + (clean ? '\n\n`[DIHENTIKAN]`' : '`[DIHENTIKAN]`') : clean
       setMessages(prev => prev.map(m =>
-        m.id === assistantId ? { ...m, content: 'KESALAHAN SISTEM. Koneksi terputus. Coba lagi.' } : m
+        m.id === assistantId ? { ...m, content: finalContent, suggestions: aborted ? [] : suggestions } : m
       ))
-      setExpression('sad')
+      if (!aborted) {
+        if (confirm) setPendingConfirm(confirm)
+        if (transfer) setPendingTransfer(transfer)
+      }
+
+      setExpression(aborted ? 'idle' : detectExpression(fullText))
+      triggerTalking(1500)
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') {
+        // handled above via reader abort
+      } else {
+        setMessages(prev => prev.map(m =>
+          m.id === assistantId ? { ...m, content: 'KESALAHAN SISTEM. Koneksi terputus. Coba lagi.' } : m
+        ))
+        setExpression('sad')
+      }
     } finally {
       setIsStreaming(false)
+      abortControllerRef.current = null
     }
   }, [input, isStreaming, messages, context, isTalking, triggerTalking])
 
   const handleConfirmTransaction = async (confirmed: boolean) => {
     if (!pendingConfirm) return
     if (!confirmed) { setPendingConfirm(null); return }
-
     setConfirmLoading(true)
     try {
-      const ctx = context as {
-        accounts: Array<{ id: string; name: string }>
-        categories: Array<{ id: string; name: string; type: string }>
-      } | null
-
-      const account = ctx?.accounts.find(a => a.name.toLowerCase().includes(pendingConfirm.accountName.toLowerCase()))
-        ?? ctx?.accounts[0]
-      const category = ctx?.categories.find(
+      const account = context?.accounts.find(a => a.name.toLowerCase().includes(pendingConfirm.accountName.toLowerCase()))
+        ?? context?.accounts[0]
+      const category = context?.categories.find(
         c => c.name.toLowerCase().includes(pendingConfirm.categoryName.toLowerCase()) && c.type === pendingConfirm.type
-      ) ?? ctx?.categories.find(c => c.type === pendingConfirm.type)
+      ) ?? context?.categories.find(c => c.type === pendingConfirm.type)
 
       if (!account || !category) throw new Error('Akun atau kategori tidak ditemukan')
 
@@ -337,6 +476,55 @@ export default function AIPage() {
     }
   }
 
+  const handleConfirmTransfer = async (confirmed: boolean) => {
+    if (!pendingTransfer) return
+    if (!confirmed) { setPendingTransfer(null); return }
+    setConfirmLoading(true)
+    try {
+      const fromAccount = context?.accounts.find(a =>
+        a.name.toLowerCase().includes(pendingTransfer.fromAccountName.toLowerCase())
+      ) ?? context?.accounts[0]
+      const toAccount = context?.accounts.find(a =>
+        a.name.toLowerCase().includes(pendingTransfer.toAccountName.toLowerCase())
+      )
+
+      if (!fromAccount || !toAccount) throw new Error('Akun tidak ditemukan')
+      if (fromAccount.id === toAccount.id) throw new Error('Akun asal dan tujuan sama')
+
+      const res = await fetch('/api/transfers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromAccountId: fromAccount.id,
+          toAccountId: toAccount.id,
+          amount: pendingTransfer.amount,
+          description: pendingTransfer.description,
+          date: pendingTransfer.date,
+        }),
+      })
+      if (!res.ok) throw new Error()
+
+      window.dispatchEvent(new Event('transaction:added'))
+      setConfirmResult('success')
+      setPendingTransfer(null)
+      setExpression('happy')
+      triggerTalking(2000)
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `DATA TERSIMPAN. Transfer **${formatIDR(pendingTransfer.amount)}** dari **${pendingTransfer.fromAccountName}** ke **${pendingTransfer.toAccountName}** berhasil dicatat.`,
+        timestamp: new Date(),
+      }])
+      fetch('/api/ai/context').then(r => r.json()).then(setContext).catch(() => {})
+    } catch {
+      setConfirmResult('error')
+      setExpression('sad')
+    } finally {
+      setConfirmLoading(false)
+      setTimeout(() => setConfirmResult(null), 3000)
+    }
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
   }
@@ -349,18 +537,15 @@ export default function AIPage() {
         style={{ fontFamily: 'JetBrains Mono, monospace', background: '#000' }}
       >
         <div className="w-full max-w-2xl">
-          {/* Header block */}
           <div style={{ borderBottom: `1px solid ${AMBER_MUTED}`, paddingBottom: 10, marginBottom: 12 }}>
             <p style={{ color: AMBER, fontSize: '0.75rem', letterSpacing: '0.16em', fontWeight: 700 }}
                className="aria-amber-glow">
               ROBCO INDUSTRIES UNIFIED OPERATING SYSTEM
             </p>
             <p style={{ color: AMBER_MUTED, fontSize: '0.62rem', letterSpacing: '0.1em', marginTop: 3 }}>
-              JAGA UANG FINANCIAL TERMINAL  ──  v2.0
+              JAGA UANG FINANCIAL TERMINAL  ──  v3.0
             </p>
           </div>
-
-          {/* Completed lines */}
           {bootLines.map((line, i) => (
             <div key={i} style={{
               color: i < 2 ? AMBER_MUTED : AMBER_DIM,
@@ -369,16 +554,12 @@ export default function AIPage() {
               {line}
             </div>
           ))}
-
-          {/* Currently typing line */}
           {typewriterLine !== '' && (
             <div style={{ color: AMBER_DIM, fontSize: '0.7rem', lineHeight: '1.9', letterSpacing: '0.04em' }}>
               {typewriterLine}
               <span style={{ color: AMBER, animation: 'type-cursor 1s infinite steps(1)' }}>█</span>
             </div>
           )}
-
-          {/* Waiting cursor when between lines */}
           {typewriterLine === '' && bootLines.length < BOOT_MESSAGES.length && (
             <span style={{ color: AMBER, animation: 'type-cursor 1s infinite steps(1)', fontSize: '0.7rem' }}>█</span>
           )}
@@ -405,7 +586,6 @@ export default function AIPage() {
         animate={{ x: 0, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 200, damping: 22, delay: 0.1 }}
       >
-        {/* RobCo header — desktop only */}
         <div className="hidden md:block w-full px-3 py-2" style={{ borderBottom: `1px solid ${AMBER_MUTED}` }}>
           <p style={{ color: AMBER_MUTED, fontSize: '0.48rem', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
             ROBCO INDUSTRIES
@@ -415,7 +595,6 @@ export default function AIPage() {
           </p>
         </div>
 
-        {/* Face */}
         <div className="flex items-center justify-center py-2 md:py-4 px-2 shrink-0 md:flex-none">
           <AriaFace
             expression={isStreaming ? 'thinking' : isTalking ? expression : 'idle'}
@@ -423,12 +602,12 @@ export default function AIPage() {
           />
         </div>
 
-        {/* Status indicators — desktop only */}
         <div className="hidden md:block w-full px-3 pb-3 mt-auto" style={{ borderTop: `1px solid ${AMBER_MUTED}` }}>
           <div style={{ paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {[
               { label: 'OPERATOR', value: 'AUTH ●' },
               { label: 'SIGNAL',   value: '████▒' },
+              { label: 'MODEL',    value: 'HAIKU' },
               { label: 'STATUS',   value: isStreaming ? 'MEMPROSES' : 'SIAP' },
             ].map(({ label, value }) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -449,15 +628,14 @@ export default function AIPage() {
         </div>
       </motion.div>
 
-      {/* ── RIGHT PANEL: Terminal output + input ── */}
+      {/* ── RIGHT PANEL ── */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
 
-        {/* ── MOBILE COMPACT HEADER (hidden on md+) ── */}
+        {/* Mobile compact header */}
         <div className="flex md:hidden items-center gap-2 px-3 py-1.5 shrink-0" style={{
           background: AMBER_PANEL,
           borderBottom: `1px solid ${AMBER_MUTED}`,
         }}>
-          {/* Scaled avatar — 200×240 → scale 0.33 → ~66×79 */}
           <div style={{ width: 66, height: 79, overflow: 'hidden', flexShrink: 0 }}>
             <div style={{ transform: 'scale(0.33)', transformOrigin: 'top left', width: 200, height: 240 }}>
               <AriaFace
@@ -466,7 +644,6 @@ export default function AIPage() {
               />
             </div>
           </div>
-          {/* ARIA info */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ color: AMBER_MUTED, fontSize: '0.42rem', letterSpacing: '0.18em', textTransform: 'uppercase' }}>
               ROBCO INDUSTRIES
@@ -475,7 +652,6 @@ export default function AIPage() {
               ARIA FINANCIAL SYSTEM
             </p>
           </div>
-          {/* Status */}
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
             <p style={{ color: AMBER_MUTED, fontSize: '0.42rem', letterSpacing: '0.06em' }}>
               SIGNAL: <span style={{ color: AMBER }}>████▒</span>
@@ -497,7 +673,7 @@ export default function AIPage() {
               ROBCO INDUSTRIES TERMLINK PROTOCOL
             </p>
             <p style={{ color: AMBER_MUTED, fontSize: '0.52rem', letterSpacing: '0.08em', marginTop: 2 }}>
-              ARIA FINANCIAL SYSTEM v2.0  ──  OPERATOR: AUTH  ──  {today}
+              ARIA v3.0  ──  HAIKU  ──  OPERATOR: AUTH  ──  {today}
             </p>
           </div>
           <button
@@ -516,14 +692,8 @@ export default function AIPage() {
               flexShrink: 0,
               transition: 'border-color 0.1s, color 0.1s',
             }}
-            onMouseEnter={e => {
-              e.currentTarget.style.borderColor = AMBER
-              e.currentTarget.style.color = AMBER
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.borderColor = AMBER_MUTED
-              e.currentTarget.style.color = AMBER_MUTED
-            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = AMBER; e.currentTarget.style.color = AMBER }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = AMBER_MUTED; e.currentTarget.style.color = AMBER_MUTED }}
           >
             [NEW]
           </button>
@@ -541,7 +711,6 @@ export default function AIPage() {
                 transition={{ duration: 0.16 }}
                 style={{ paddingTop: 8, paddingBottom: 8 }}
               >
-                {/* Separator */}
                 {idx > 0 && (
                   <div style={{
                     height: 1,
@@ -549,7 +718,6 @@ export default function AIPage() {
                     marginBottom: 10,
                   }} />
                 )}
-
                 <div>
                   {msg.role === 'assistant' ? (
                     <>
@@ -559,6 +727,7 @@ export default function AIPage() {
                         dangerouslySetInnerHTML={{
                           __html: msg.content
                             .replace(/\*\*(.*?)\*\*/g, `<strong style="color:${AMBER}">$1</strong>`)
+                            .replace(/`([^`]+)`/g, `<code style="color:${AMBER_DARK};background:rgba(255,176,0,0.08);padding:1px 4px;border-radius:2px">$1</code>`)
                             .replace(/\n/g, '<br/>')
                         }}
                       />
@@ -573,6 +742,36 @@ export default function AIPage() {
                             />
                           ))}
                         </span>
+                      )}
+                      {/* Suggestion chips */}
+                      {msg.suggestions && msg.suggestions.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 10 }}>
+                          {msg.suggestions.map((s, si) => (
+                            <button
+                              key={si}
+                              onClick={() => !isStreaming && sendMessage(s)}
+                              disabled={isStreaming}
+                              style={{
+                                background: 'transparent',
+                                border: `1px solid ${AMBER_MUTED}`,
+                                borderRadius: 2,
+                                color: AMBER_DARK,
+                                cursor: 'pointer',
+                                fontFamily: 'JetBrains Mono, monospace',
+                                fontSize: '0.54rem',
+                                letterSpacing: '0.03em',
+                                padding: '3px 7px',
+                                opacity: isStreaming ? 0.4 : 1,
+                                transition: 'border-color 0.1s, color 0.1s',
+                                textAlign: 'left',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.borderColor = AMBER; e.currentTarget.style.color = AMBER }}
+                              onMouseLeave={e => { e.currentTarget.style.borderColor = AMBER_MUTED; e.currentTarget.style.color = AMBER_DARK }}
+                            >
+                              ↳ {s}
+                            </button>
+                          ))}
+                        </div>
                       )}
                     </>
                   ) : (
@@ -624,36 +823,61 @@ export default function AIPage() {
                   ))}
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button
-                    onClick={() => handleConfirmTransaction(false)}
-                    disabled={confirmLoading}
-                    style={{
-                      flex: 1, background: 'transparent',
-                      border: `1px solid ${AMBER_MUTED}`, borderRadius: 2,
-                      color: AMBER_MUTED, cursor: 'pointer',
-                      fontFamily: 'JetBrains Mono, monospace',
-                      fontSize: '0.6rem', fontWeight: 600, letterSpacing: '0.08em',
-                      padding: '5px 8px', textTransform: 'uppercase',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                    }}
-                  >
+                  <button onClick={() => handleConfirmTransaction(false)} disabled={confirmLoading}
+                    style={{ flex: 1, background: 'transparent', border: `1px solid ${AMBER_MUTED}`, borderRadius: 2, color: AMBER_MUTED, cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.6rem', fontWeight: 600, letterSpacing: '0.08em', padding: '5px 8px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                     <X size={10} /> BATALKAN
                   </button>
-                  <button
-                    onClick={() => handleConfirmTransaction(true)}
-                    disabled={confirmLoading}
-                    style={{
-                      flex: 1, background: `rgba(255,176,0,0.1)`,
-                      border: `1px solid ${AMBER}`, borderRadius: 2,
-                      color: AMBER, cursor: 'pointer',
-                      fontFamily: 'JetBrains Mono, monospace',
-                      fontSize: '0.6rem', fontWeight: 600, letterSpacing: '0.08em',
-                      padding: '5px 8px', textTransform: 'uppercase',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                      opacity: confirmLoading ? 0.6 : 1,
-                    }}
-                  >
+                  <button onClick={() => handleConfirmTransaction(true)} disabled={confirmLoading}
+                    style={{ flex: 1, background: `rgba(255,176,0,0.1)`, border: `1px solid ${AMBER}`, borderRadius: 2, color: AMBER, cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.6rem', fontWeight: 600, letterSpacing: '0.08em', padding: '5px 8px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, opacity: confirmLoading ? 0.6 : 1 }}>
                     <Check size={10} /> {confirmLoading ? 'MENYIMPAN...' : 'YA, CATAT'}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Transfer confirm card */}
+          <AnimatePresence>
+            {pendingTransfer && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 22 }}
+                style={{
+                  border: `1px solid ${AMBER_MUTED}`,
+                  background: AMBER_DEEP,
+                  borderRadius: 2,
+                  padding: '12px 14px',
+                  maxWidth: 440,
+                  marginTop: 10,
+                }}
+              >
+                <p style={{ color: AMBER_MUTED, fontSize: '0.55rem', letterSpacing: '0.15em', marginBottom: 10, fontWeight: 700 }}>
+                  ── KONFIRMASI TRANSFER ──
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 12 }}>
+                  {[
+                    { label: 'DARI',      value: pendingTransfer.fromAccountName, color: '#ff2055' },
+                    { label: 'KE',        value: pendingTransfer.toAccountName,   color: '#00ff41' },
+                    { label: 'JUMLAH',    value: formatIDR(pendingTransfer.amount), color: AMBER },
+                    { label: 'DESKRIPSI', value: pendingTransfer.description,     color: AMBER_DIM },
+                    { label: 'TANGGAL',   value: formatDate(pendingTransfer.date, 'dd MMM yyyy', lang), color: AMBER_DARK },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                      <span style={{ color: AMBER_MUTED, fontSize: '0.6rem' }}>{label}</span>
+                      <span style={{ color, fontSize: '0.6rem', fontWeight: 600 }}>{value}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => handleConfirmTransfer(false)} disabled={confirmLoading}
+                    style={{ flex: 1, background: 'transparent', border: `1px solid ${AMBER_MUTED}`, borderRadius: 2, color: AMBER_MUTED, cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.6rem', fontWeight: 600, letterSpacing: '0.08em', padding: '5px 8px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                    <X size={10} /> BATALKAN
+                  </button>
+                  <button onClick={() => handleConfirmTransfer(true)} disabled={confirmLoading}
+                    style={{ flex: 1, background: `rgba(255,176,0,0.1)`, border: `1px solid ${AMBER}`, borderRadius: 2, color: AMBER, cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.6rem', fontWeight: 600, letterSpacing: '0.08em', padding: '5px 8px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, opacity: confirmLoading ? 0.6 : 1 }}>
+                    <Check size={10} /> {confirmLoading ? 'MEMPROSES...' : 'YA, TRANSFER'}
                   </button>
                 </div>
               </motion.div>
@@ -667,13 +891,9 @@ export default function AIPage() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                style={{
-                  fontSize: '0.65rem',
-                  color: confirmResult === 'success' ? AMBER : '#ff2055',
-                  padding: '6px 0', letterSpacing: '0.06em',
-                }}
+                style={{ fontSize: '0.65rem', color: confirmResult === 'success' ? AMBER : '#ff2055', padding: '6px 0', letterSpacing: '0.06em' }}
               >
-                {confirmResult === 'success' ? '[OK] TRANSAKSI BERHASIL DICATAT' : '[ERR] GAGAL MENCATAT TRANSAKSI'}
+                {confirmResult === 'success' ? '[OK] OPERASI BERHASIL DICATAT' : '[ERR] GAGAL — COBA LAGI'}
               </motion.div>
             )}
           </AnimatePresence>
@@ -688,15 +908,12 @@ export default function AIPage() {
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.3 }}
         >
-          {/* Quick action buttons — wrap on desktop, scroll on mobile */}
+          {/* Quick action buttons */}
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto', flexWrap: 'nowrap', marginBottom: 10, paddingBottom: 2 }}>
             {QUICK_ACTIONS.map(({ n, label, prompt }) => (
               <button
                 key={n}
-                onClick={() => {
-                  setInput(prompt)
-                  inputRef.current?.focus()
-                }}
+                onClick={() => sendMessage(prompt)}
                 disabled={isStreaming}
                 style={{
                   background: 'transparent',
@@ -713,18 +930,8 @@ export default function AIPage() {
                   transition: 'border-color 0.1s, color 0.1s',
                   flexShrink: 0,
                 }}
-                onMouseEnter={e => {
-                  if (!isStreaming) {
-                    const btn = e.currentTarget
-                    btn.style.borderColor = AMBER
-                    btn.style.color = AMBER
-                  }
-                }}
-                onMouseLeave={e => {
-                  const btn = e.currentTarget
-                  btn.style.borderColor = AMBER_MUTED
-                  btn.style.color = AMBER_DARK
-                }}
+                onMouseEnter={e => { if (!isStreaming) { e.currentTarget.style.borderColor = AMBER; e.currentTarget.style.color = AMBER } }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = AMBER_MUTED; e.currentTarget.style.color = AMBER_DARK }}
               >
                 [{n}] {label}
               </button>
@@ -764,29 +971,24 @@ export default function AIPage() {
               />
             </div>
             <motion.button
-              onClick={sendMessage}
-              disabled={isStreaming || !input.trim()}
+              onClick={isStreaming ? stopStreaming : () => sendMessage()}
+              disabled={!isStreaming && !input.trim()}
               style={{
-                background: input.trim() && !isStreaming ? 'rgba(255,176,0,0.12)' : 'transparent',
-                border: `1px solid ${input.trim() && !isStreaming ? AMBER : AMBER_MUTED}`,
+                background: isStreaming ? 'rgba(255,32,85,0.1)' : input.trim() ? 'rgba(255,176,0,0.12)' : 'transparent',
+                border: `1px solid ${isStreaming ? '#ff2055' : input.trim() ? AMBER : AMBER_MUTED}`,
                 borderRadius: 2,
-                color: input.trim() && !isStreaming ? AMBER : AMBER_MUTED,
-                cursor: 'pointer',
+                color: isStreaming ? '#ff2055' : input.trim() ? AMBER : AMBER_MUTED,
+                cursor: (!isStreaming && !input.trim()) ? 'not-allowed' : 'pointer',
                 width: 38, height: 38,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                opacity: isStreaming || !input.trim() ? 0.4 : 1,
+                opacity: (!isStreaming && !input.trim()) ? 0.4 : 1,
                 flexShrink: 0,
                 transition: 'all 0.15s',
               }}
               whileTap={{ scale: 0.92 }}
+              title={isStreaming ? 'Hentikan' : 'Kirim'}
             >
-              {isStreaming ? (
-                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
-                  <RotateCcw size={13} />
-                </motion.div>
-              ) : (
-                <Send size={13} />
-              )}
+              {isStreaming ? <Square size={11} fill="currentColor" /> : <Send size={13} />}
             </motion.button>
           </div>
 
@@ -798,7 +1000,7 @@ export default function AIPage() {
           </p>
         </motion.div>
 
-      </div>{/* end right panel */}
+      </div>
     </motion.div>
   )
 }

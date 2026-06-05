@@ -103,7 +103,7 @@ export default function AriaFace({ expression, isTalking }: AriaFaceProps) {
           fontSize: '0.48rem', letterSpacing: '0.2em',
           color: '#806000', textTransform: 'uppercase',
         }}>
-          ARIA v2.0
+          ARIA v3.0
         </div>
 
         {/* Screen area */}
@@ -180,76 +180,72 @@ export default function AriaFace({ expression, isTalking }: AriaFaceProps) {
             <line x1="60" y1="22" x2="100" y2="22" stroke={accentColor} strokeWidth="0.4" strokeOpacity="0.15" />
 
             {/* LEFT EYE */}
-            <motion.g
-              animate={{ scaleY: eyeScaleY, scaleX: eyeScaleX }}
-              transition={{ duration: blinkState ? 0.06 : 0.15, ease: 'easeOut' }}
-              style={{ transformOrigin: '52px 72px' }}
-            >
+            <g style={{
+              transform: `scaleY(${eyeScaleY}) scaleX(${eyeScaleX})`,
+              transformOrigin: '52px 72px',
+              transition: `transform ${blinkState ? 0.06 : 0.15}s ease-out`,
+            }}>
               <ellipse cx="52" cy="72" rx="16" ry="12" fill="rgba(0,0,0,0.6)" stroke={accentColor} strokeWidth="0.8" strokeOpacity="0.5" />
-              <motion.ellipse
+              <ellipse
                 cx={52 + pupilPos.x} cy={72 + pupilPos.y}
-                rx="10" ry="8"
+                rx={isSurprised ? 11 : 10} ry={isSurprised ? 9 : 8}
                 fill="url(#ariaEyeGrad)"
                 filter="url(#ariaSoftGlow)"
-                animate={{ rx: isSurprised ? 11 : 10, ry: isSurprised ? 9 : 8 }}
-                transition={{ duration: 0.2 }}
               />
-              <motion.circle
-                cx={52 + pupilPos.x} cy={72 + pupilPos.y} r="4"
+              <circle
+                cx={52 + pupilPos.x} cy={72 + pupilPos.y}
+                r={isThinking ? 3 : isSurprised ? 5 : 4}
                 fill="rgba(0,0,0,0.8)"
-                animate={{ r: isThinking ? 3 : isSurprised ? 5 : 4 }}
-                transition={{ duration: 0.2 }}
               />
               <circle cx={54 + pupilPos.x} cy={70 + pupilPos.y} r="1.5" fill="white" fillOpacity="0.7" />
               <line x1="38" y1="80" x2="66" y2="80" stroke={accentColor} strokeWidth="0.6" strokeOpacity="0.3" />
-            </motion.g>
+            </g>
 
             {/* Left eyebrow */}
-            <motion.path
-              d="M 36 57 Q 52 52 68 55"
-              fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeOpacity="0.8"
-              animate={{
-                d: isSad ? 'M 36 55 Q 52 60 68 57' : isWarning ? 'M 36 52 Q 52 56 68 60' : isThinking ? 'M 36 54 Q 52 50 68 53' : isHappy ? 'M 36 56 Q 52 50 68 54' : 'M 36 57 Q 52 52 68 55',
-                y: browY,
-              }}
+            <motion.g
+              animate={{ y: browY, rotate: browRotate }}
               transition={{ duration: 0.35, ease: 'easeOut' }}
-              style={{ translateY: browY, rotate: browRotate }}
-            />
+              style={{ transformOrigin: '52px 56px' }}
+            >
+              <path
+                d={isSad ? 'M 36 55 Q 52 60 68 57' : isWarning ? 'M 36 52 Q 52 56 68 60' : isThinking ? 'M 36 54 Q 52 50 68 53' : isHappy ? 'M 36 56 Q 52 50 68 54' : 'M 36 57 Q 52 52 68 55'}
+                fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeOpacity="0.8"
+              />
+            </motion.g>
 
             {/* RIGHT EYE */}
-            <motion.g
-              animate={{ scaleY: eyeScaleY, scaleX: eyeScaleX }}
-              transition={{ duration: blinkState ? 0.06 : 0.15, ease: 'easeOut' }}
-              style={{ transformOrigin: '108px 72px' }}
-            >
+            <g style={{
+              transform: `scaleY(${eyeScaleY}) scaleX(${eyeScaleX})`,
+              transformOrigin: '108px 72px',
+              transition: `transform ${blinkState ? 0.06 : 0.15}s ease-out`,
+            }}>
               <ellipse cx="108" cy="72" rx="16" ry="12" fill="rgba(0,0,0,0.6)" stroke={accentColor} strokeWidth="0.8" strokeOpacity="0.5" />
-              <motion.ellipse
+              <ellipse
                 cx={108 + pupilPos.x} cy={72 + pupilPos.y}
-                rx="10" ry="8"
+                rx={isSurprised ? 11 : 10} ry={isSurprised ? 9 : 8}
                 fill="url(#ariaEyeGrad)"
                 filter="url(#ariaSoftGlow)"
-                animate={{ rx: isSurprised ? 11 : 10, ry: isSurprised ? 9 : 8 }}
-                transition={{ duration: 0.2 }}
               />
-              <motion.circle
-                cx={108 + pupilPos.x} cy={72 + pupilPos.y} r="4"
+              <circle
+                cx={108 + pupilPos.x} cy={72 + pupilPos.y}
+                r={isThinking ? 3 : isSurprised ? 5 : 4}
                 fill="rgba(0,0,0,0.8)"
-                animate={{ r: isThinking ? 3 : isSurprised ? 5 : 4 }}
-                transition={{ duration: 0.2 }}
               />
               <circle cx={110 + pupilPos.x} cy={70 + pupilPos.y} r="1.5" fill="white" fillOpacity="0.7" />
               <line x1="94" y1="80" x2="122" y2="80" stroke={accentColor} strokeWidth="0.6" strokeOpacity="0.3" />
-            </motion.g>
+            </g>
 
             {/* Right eyebrow */}
-            <motion.path
-              d="M 92 55 Q 108 52 124 57"
-              fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeOpacity="0.8"
-              animate={{
-                d: isSad ? 'M 92 57 Q 108 60 124 55' : isWarning ? 'M 92 60 Q 108 56 124 52' : isThinking ? 'M 92 53 Q 108 50 124 54' : isHappy ? 'M 92 54 Q 108 50 124 56' : 'M 92 55 Q 108 52 124 57',
-              }}
+            <motion.g
+              animate={{ y: browY, rotate: -browRotate }}
               transition={{ duration: 0.35, ease: 'easeOut' }}
-            />
+              style={{ transformOrigin: '108px 56px' }}
+            >
+              <path
+                d={isSad ? 'M 92 57 Q 108 60 124 55' : isWarning ? 'M 92 60 Q 108 56 124 52' : isThinking ? 'M 92 53 Q 108 50 124 54' : isHappy ? 'M 92 54 Q 108 50 124 56' : 'M 92 55 Q 108 52 124 57'}
+                fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeOpacity="0.8"
+              />
+            </motion.g>
 
             {/* NOSE */}
             <motion.path
@@ -259,24 +255,22 @@ export default function AriaFace({ expression, isTalking }: AriaFaceProps) {
             />
 
             {/* MOUTH */}
-            <motion.path
+            <path
               d={getMouthPath()}
               fill="none" stroke={accentColor} strokeWidth="2.5" strokeLinecap="round"
               filter="url(#ariaSoftGlow)"
-              animate={{ d: getMouthPath() }}
-              transition={{ duration: 0.1, ease: 'easeOut' }}
             />
 
             {/* Mouth inner — open when talking */}
             <AnimatePresence>
               {isTalking && (
                 <motion.ellipse
-                  cx="80" cy="106"
-                  initial={{ ry: 0 }}
-                  animate={{ ry: 4 }}
-                  exit={{ ry: 0 }}
-                  rx="10"
+                  cx="80" cy="106" rx="10" ry="4"
                   fill="rgba(0,0,0,0.7)"
+                  initial={{ scaleY: 0 }}
+                  animate={{ scaleY: 1 }}
+                  exit={{ scaleY: 0 }}
+                  style={{ transformOrigin: '80px 106px' }}
                   transition={{ duration: 0.08 }}
                 />
               )}
@@ -344,11 +338,9 @@ export default function AriaFace({ expression, isTalking }: AriaFaceProps) {
             </AnimatePresence>
 
             {/* Bottom data line */}
-            <motion.line
+            <line
               x1="30" y1="168" x2="130" y2="168"
               stroke={accentColor} strokeWidth="0.5" strokeOpacity="0.3"
-              animate={{ x1: [30, 28, 30], x2: [130, 132, 130] }}
-              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
             />
           </motion.svg>
 

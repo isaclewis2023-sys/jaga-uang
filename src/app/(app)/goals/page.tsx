@@ -28,7 +28,7 @@ function GoalProgressRing({ value, max, color, size = 80 }: { value: number; max
         </filter>
       </defs>
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(0,255,65,0.08)" strokeWidth="6" />
-      <motion.circle
+      <circle
         cx={size/2} cy={size/2} r={r} fill="none"
         stroke={color} strokeWidth="6"
         strokeDasharray={`${dash} ${circ}`}
@@ -36,9 +36,7 @@ function GoalProgressRing({ value, max, color, size = 80 }: { value: number; max
         strokeLinecap="round"
         transform={`rotate(-90 ${size/2} ${size/2})`}
         filter={`url(#glow-${color.replace('#', '')})`}
-        initial={{ strokeDasharray: `0 ${circ}` }}
-        animate={{ strokeDasharray: `${dash} ${circ}` }}
-        transition={{ duration: 1, ease: 'easeOut' }}
+        style={{ transition: 'stroke-dasharray 1s ease-out' }}
       />
       <text x={size/2} y={size/2 + 5} textAnchor="middle" fill={color} fontSize={size * 0.2} fontWeight="700" fontFamily="JetBrains Mono, monospace">
         {pct}%
