@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { accounts, transactions, budgets, goals, categories } from '@/lib/db/schema'
+import { accounts, transactions, budgets, goals, categories, recurringRules } from '@/lib/db/schema'
 import { eq, desc, and, gte, lte } from 'drizzle-orm'
 
 export async function GET() {
@@ -12,7 +12,7 @@ export async function GET() {
     const lastDay = new Date(y, m, 0).getDate()
     const monthEnd = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 
-    const [allAccounts, recentTx, monthTx, allBudgets, allGoals, allCategories] = await Promise.all([
+    const [allAccounts, recentTx, monthTx, allBudgets, allGoals, allCategories, allRecurring] = await Promise.all([
       db.select().from(accounts).where(eq(accounts.isActive, true)),
       db.select().from(transactions)
         .leftJoin(accounts, eq(transactions.accountId, accounts.id))
@@ -27,6 +27,10 @@ export async function GET() {
         .leftJoin(categories, eq(budgets.categoryId, categories.id)),
       db.select().from(goals),
       db.select().from(categories),
+      db.select().from(recurringRules)
+        .where(eq(recurringRules.isActive, true))
+        .leftJoin(accounts, eq(recurringRules.accountId, accounts.id))
+        .leftJoin(categories, eq(recurringRules.categoryId, categories.id)),
     ])
 
     const netWorth = allAccounts.reduce((s, a) => s + (a.type === 'credit' ? -a.balance : a.balance), 0)
@@ -84,6 +88,16 @@ export async function GET() {
       })),
       topExpenseCategories: topCategories,
       categories: allCategories.map(c => ({ id: c.id, name: c.name, type: c.type, icon: c.icon })),
+      recurringRules: allRecurring.map(r => ({
+        description: r.recurring_rules.description,
+        amount: r.recurring_rules.amount,
+        type: r.recurring_rules.type,
+        frequency: r.recurring_rules.frequency,
+        nextDue: r.recurring_rules.nextDue,
+        endDate: r.recurring_rules.endDate,
+        category: r.categories?.name ?? '',
+        account: r.accounts?.name ?? '',
+      })),
     })
   } catch (e) {
     console.error(e)

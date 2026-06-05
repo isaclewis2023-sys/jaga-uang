@@ -70,6 +70,9 @@ const QUICK_ACTIONS: { n: number; label: string; prompt: string }[] = [
   { n: 4, label: 'TIPS HEMAT',       prompt: 'Berikan tips hemat yang relevan dengan kondisi keuangan saya.' },
 ]
 
+const CHAT_STORAGE_KEY = 'aria-chat-v1'
+const MAX_SAVED_MESSAGES = 50
+
 export default function AIPage() {
   const { lang } = useLanguage()
   const [messages, setMessages] = useState<Message[]>([])
@@ -87,10 +90,34 @@ export default function AIPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const talkingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const skipBootRef = useRef(false)    // true when restoring from localStorage
+  const isRestoredRef = useRef(false)  // true when messages already loaded from storage
   const today = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase()
+
+  // Restore chat from localStorage — runs first, before boot sequence
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(CHAT_STORAGE_KEY)
+      if (!raw) return
+      const { messages: saved, cachedContext } = JSON.parse(raw) as {
+        messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; timestamp: string }>
+        cachedContext: Record<string, unknown> | null
+      }
+      if (!saved?.length) return
+      skipBootRef.current = true
+      isRestoredRef.current = true
+      setMessages(saved.map(m => ({ ...m, timestamp: new Date(m.timestamp) })))
+      if (cachedContext) setContext(cachedContext)
+      setBootPhase('ready')
+      setExpression('idle')
+      // Re-fetch context silently to get latest financial data
+      fetch('/api/ai/context').then(r => r.json()).then(setContext).catch(() => {})
+    } catch {}
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Boot sequence — typewriter per character
   useEffect(() => {
+    if (skipBootRef.current) return  // already restored from localStorage, skip boot
     let lineIdx = 0
     let charIdx = 0
     let cancelled = false
@@ -119,9 +146,10 @@ export default function AIPage() {
     return () => { cancelled = true }
   }, [])
 
-  // Load context after boot
+  // Load context after boot — skipped when restored from localStorage
   useEffect(() => {
     if (bootPhase !== 'ready') return
+    if (isRestoredRef.current) return  // already fetched silently in mount effect
     fetch('/api/ai/context')
       .then(r => r.json())
       .then(data => {
@@ -149,6 +177,32 @@ export default function AIPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Persist chat to localStorage whenever messages or context changes
+  useEffect(() => {
+    if (messages.length === 0 || !context) return
+    try {
+      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({
+        messages: messages.slice(-MAX_SAVED_MESSAGES),
+        cachedContext: context,
+      }))
+    } catch {}
+  }, [messages, context])
+
+  const clearConversation = useCallback(() => {
+    localStorage.removeItem(CHAT_STORAGE_KEY)
+    skipBootRef.current = false
+    isRestoredRef.current = false
+    setMessages([])
+    setContext(null)
+    setBootPhase('booting')
+    setBootLines([])
+    setTypewriterLine('')
+    setExpression('idle')
+    setIsTalking(false)
+    setPendingConfirm(null)
+    setConfirmResult(null)
+  }, [])
 
   const triggerTalking = useCallback((durationMs: number) => {
     setIsTalking(true)
@@ -437,13 +491,42 @@ export default function AIPage() {
         </div>
 
         {/* Terminal header */}
-        <div style={{ borderBottom: `1px solid ${AMBER_MUTED}`, background: AMBER_PANEL, padding: '8px 16px', flexShrink: 0 }}>
-          <p className="aria-amber-glow" style={{ color: AMBER, fontSize: '0.62rem', letterSpacing: '0.14em', fontWeight: 700 }}>
-            ROBCO INDUSTRIES TERMLINK PROTOCOL
-          </p>
-          <p style={{ color: AMBER_MUTED, fontSize: '0.52rem', letterSpacing: '0.08em', marginTop: 2 }}>
-            ARIA FINANCIAL SYSTEM v2.0  ──  OPERATOR: AUTH  ──  {today}
-          </p>
+        <div style={{ borderBottom: `1px solid ${AMBER_MUTED}`, background: AMBER_PANEL, padding: '8px 16px', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <p className="aria-amber-glow" style={{ color: AMBER, fontSize: '0.62rem', letterSpacing: '0.14em', fontWeight: 700 }}>
+              ROBCO INDUSTRIES TERMLINK PROTOCOL
+            </p>
+            <p style={{ color: AMBER_MUTED, fontSize: '0.52rem', letterSpacing: '0.08em', marginTop: 2 }}>
+              ARIA FINANCIAL SYSTEM v2.0  ──  OPERATOR: AUTH  ──  {today}
+            </p>
+          </div>
+          <button
+            onClick={clearConversation}
+            title="Mulai percakapan baru"
+            style={{
+              background: 'transparent',
+              border: `1px solid ${AMBER_MUTED}`,
+              borderRadius: 2,
+              color: AMBER_MUTED,
+              cursor: 'pointer',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '0.5rem', fontWeight: 600,
+              letterSpacing: '0.08em',
+              padding: '3px 6px',
+              flexShrink: 0,
+              transition: 'border-color 0.1s, color 0.1s',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.borderColor = AMBER
+              e.currentTarget.style.color = AMBER
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.borderColor = AMBER_MUTED
+              e.currentTarget.style.color = AMBER_MUTED
+            }}
+          >
+            [NEW]
+          </button>
         </div>
 
         {/* Messages area */}
