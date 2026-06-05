@@ -28,7 +28,6 @@ export async function GET() {
       db.select().from(goals),
       db.select().from(categories),
       db.select().from(recurringRules)
-        .where(eq(recurringRules.isActive, true))
         .leftJoin(accounts, eq(recurringRules.accountId, accounts.id))
         .leftJoin(categories, eq(recurringRules.categoryId, categories.id)),
     ])
@@ -95,6 +94,7 @@ export async function GET() {
         frequency: r.recurring_rules.frequency,
         nextDue: r.recurring_rules.nextDue,
         endDate: r.recurring_rules.endDate,
+        isActive: Boolean(r.recurring_rules.isActive),
         category: r.categories?.name ?? '',
         account: r.accounts?.name ?? '',
       })),
