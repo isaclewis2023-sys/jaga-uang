@@ -145,17 +145,21 @@ Access via `const { t } = useLanguage()` in client components.
 
 ## ARIA AI Helper (/ai)
 
-Full-page AI assistant powered by Claude Haiku. Architecture:
-- `src/app/(app)/ai/page.tsx` — chat UI with boot sequence + transaction confirm flow
-- `src/components/AriaFace.tsx` — SVG human-like face with Framer Motion expressions (idle/thinking/talking/happy/sad/surprised/warning), natural blink loop, pupil darting
-- `src/app/api/ai/context/route.ts` — GET, aggregates all financial data (accounts, transactions, budgets, goals) into a single context object for the AI
-- `src/app/api/ai/chat/route.ts` — POST, streams Claude Haiku responses via SSE, injects financial context into system prompt
+Full-page AI assistant powered by Claude Haiku with **Fallout RobCo Industries terminal aesthetic** (amber phosphor CRT). Architecture:
+- `src/app/(app)/ai/page.tsx` — Fallout terminal UI: two-column layout (desktop), mobile compact header, typewriter boot sequence (8 RobCo-style lines), terminal-line messages (no bubbles), 4 quick-action buttons, amber color palette
+- `src/components/AriaFace.tsx` — SVG face inside amber CRT monitor frame: corner brackets, bezel labels, 4 signal bars, heavy phosphor scanlines, amber `#FFB000` accent color (warning=red, sad=cyan still apply)
+- `src/app/api/ai/context/route.ts` — GET, aggregates all financial data (accounts, transactions, budgets, goals, categories) into a single context object for the AI
+- `src/app/api/ai/chat/route.ts` — POST, streams Claude Haiku via SSE; system prompt uses Fallout terminal voice ("DATA DITEMUKAN:", "ANALISIS SELESAI.", "PERINGATAN:", "REKOMENDASI SISTEM:"), refers to user as "operator"
+
+**Color scope**: Amber theme is scoped to `/ai` page only — all other pages remain matrix-green. New keyframes in `globals.css`: `crt-flicker`, `phosphor-pulse`, `type-cursor`, plus `.aria-amber-glow`, `.aria-crt-flicker`, `.aria-phosphor-pulse` utility classes.
 
 **Requires `ANTHROPIC_API_KEY`** in `.env.local` — app works without it but AI responses will fail.
 
-Transaction confirmation flow: AI embeds `<transaction_confirm>{...}</transaction_confirm>` in response → UI shows confirm card → on confirm, calls existing `/api/transactions` POST (atomic, same as manual entry).
+Transaction confirmation flow: AI embeds `<transaction_confirm>{...}</transaction_confirm>` in response → UI shows confirm card (amber-styled) → on confirm, calls existing `/api/transactions` POST (atomic, same as manual entry).
 
 Expression detection: keywords in AI response text automatically set face expression. `window.dispatchEvent(new Event('transaction:added'))` fired after AI-confirmed transaction.
+
+AI context includes: accounts (id/name/type/balance/icon), recent 20 transactions, this-month transactions (up to 200 for budget calc), budget with % spent, goals with progress, top-5 expense categories, all categories (for transaction creation), netWorth/monthIncome/monthExpense/savingsRate.
 
 ## QuickAddFAB Pattern
 
@@ -169,6 +173,14 @@ useEffect(() => {
 ```
 
 ## Last Updated
+
+2026-06-05 — Feature pass #3: ARIA Fallout Terminal UI Redesign.
+- Redesigned /ai page with Fallout RobCo Industries amber phosphor CRT aesthetic
+- AriaFace.tsx: amber CRT monitor frame with corner brackets, signal bars, bezel labels, heavier scanlines
+- page.tsx: two-column desktop layout, mobile compact header with scaled avatar, typewriter boot sequence (8 lines ~22ms/char), terminal-line messages (no bubbles), 4 Fallout-style quick action buttons
+- globals.css: added crt-flicker, phosphor-pulse, type-cursor keyframes + aria-amber-glow utility class
+- api/ai/chat: updated system prompt to Fallout terminal voice ("operator", terminal phrases)
+- Amber palette (#FFB000) scoped to /ai only — rest of app stays matrix-green
 
 2026-06-05 — Feature pass #2: ARIA AI Helper complete.
 - Added ARIA AI Helper page (/ai) — full-page chat with boot sequence animation
