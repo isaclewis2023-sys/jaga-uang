@@ -33,27 +33,32 @@ export function generateId(): string {
 }
 
 export function getToday(): string {
-  return new Date().toISOString().split('T')[0]
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 export function getMonthStart(year?: number, month?: number): string {
   const d = new Date()
   const y = year ?? d.getFullYear()
-  const m = (month ?? d.getMonth() + 1) - 1
-  return new Date(y, m, 1).toISOString().split('T')[0]
+  const m = month ?? d.getMonth() + 1
+  return `${y}-${String(m).padStart(2, '0')}-01`
 }
 
 export function getMonthEnd(year?: number, month?: number): string {
   const d = new Date()
   const y = year ?? d.getFullYear()
-  const m = (month ?? d.getMonth() + 1) - 1
-  return new Date(y, m + 1, 0).toISOString().split('T')[0]
+  const m = month ?? d.getMonth() + 1
+  const lastDay = new Date(y, m, 0).getDate()
+  return `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 }
 
 export function addMonths(date: string, months: number): string {
   const d = parseISO(date)
+  const day = d.getDate()
   d.setMonth(d.getMonth() + months)
-  return d.toISOString().split('T')[0]
+  // Handle month-end overflow (e.g. Jan 31 + 1 month → cap at Feb 28/29)
+  if (d.getDate() !== day) d.setDate(0)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 export function getDaysRemaining(deadline: string): number {
@@ -105,5 +110,6 @@ export const DEFAULT_CATEGORIES = [
   { name: 'Hiburan', type: 'expense', color: '#a29bfe', icon: '🎮' },
   { name: 'Pendidikan', type: 'expense', color: '#74b9ff', icon: '📚' },
   { name: 'Langganan', type: 'expense', color: '#fd79a8', icon: '📱' },
+  { name: 'Tabungan', type: 'expense', color: '#00e5ff', icon: '🏦' },
   { name: 'Lain-lain (Keluar)', type: 'expense', color: '#b2bec3', icon: '➖' },
 ]

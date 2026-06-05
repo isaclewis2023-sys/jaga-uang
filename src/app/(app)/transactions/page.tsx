@@ -41,14 +41,14 @@ function TransactionForm({
     e.preventDefault()
     setError('')
     if (!form.accountId || !form.categoryId || !form.amount || !form.description || !form.date) {
-      setError('Semua field wajib diisi')
+      setError(t.transactions.requiredFields)
       return
     }
     setSaving(true)
     try {
       await onSave({ ...form, amount: Number(form.amount.replace(/\./g, '').replace(',', '.')) })
     } catch {
-      setError('Gagal menyimpan')
+      setError(t.transactions.saveFailed)
     } finally {
       setSaving(false)
     }
@@ -87,7 +87,7 @@ function TransactionForm({
             className="matrix-input"
             placeholder="0"
             min="0"
-            step="1000"
+            step="1"
             required
           />
         </div>

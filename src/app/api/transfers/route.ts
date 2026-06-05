@@ -19,21 +19,21 @@ export async function POST(req: NextRequest) {
     const now = new Date().toISOString()
     const amt = Number(amount)
 
-    await db.insert(transfers).values({
-      id, fromAccountId, toAccountId,
-      amount: amt,
-      description: description ?? 'Transfer',
-      date,
-      createdAt: now,
-    })
-
-    await db.update(accounts)
-      .set({ balance: sql`${accounts.balance} - ${amt}`, updatedAt: now })
-      .where(eq(accounts.id, fromAccountId))
-
-    await db.update(accounts)
-      .set({ balance: sql`${accounts.balance} + ${amt}`, updatedAt: now })
-      .where(eq(accounts.id, toAccountId))
+    await db.batch([
+      db.insert(transfers).values({
+        id, fromAccountId, toAccountId,
+        amount: amt,
+        description: description ?? 'Transfer',
+        date,
+        createdAt: now,
+      }),
+      db.update(accounts)
+        .set({ balance: sql`${accounts.balance} - ${amt}`, updatedAt: now })
+        .where(eq(accounts.id, fromAccountId)),
+      db.update(accounts)
+        .set({ balance: sql`${accounts.balance} + ${amt}`, updatedAt: now })
+        .where(eq(accounts.id, toAccountId)),
+    ])
 
     const [row] = await db.select().from(transfers).where(eq(transfers.id, id))
     return NextResponse.json(row, { status: 201 })

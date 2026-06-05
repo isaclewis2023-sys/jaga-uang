@@ -20,6 +20,7 @@ import type { Account, Transaction } from '@/types'
 interface DashboardData {
   accounts: Account[]
   transactions: Transaction[]
+  monthTransactions: Transaction[]
   health: {
     total: number
     label: string
@@ -112,18 +113,19 @@ export default function DashboardPage() {
       const startDate = getMonthStart(today.getFullYear(), today.getMonth() + 1)
       const endDate = getMonthEnd(today.getFullYear(), today.getMonth() + 1)
 
-      const [accsRes, txsRes, healthRes, budgetsRes] = await Promise.all([
+      const [accsRes, recentTxsRes, monthTxsRes, healthRes, budgetsRes] = await Promise.all([
         fetch('/api/accounts'),
-        fetch(`/api/transactions?limit=10`),
+        fetch('/api/transactions?limit=10'),
+        fetch(`/api/transactions?startDate=${startDate}&endDate=${endDate}&limit=500`),
         fetch('/api/health'),
         fetch(`/api/budget?month=${today.getMonth() + 1}&year=${today.getFullYear()}`),
       ])
 
-      const [accounts, transactions, health, budgets] = await Promise.all([
-        accsRes.json(), txsRes.json(), healthRes.json(), budgetsRes.json()
+      const [accounts, transactions, monthTransactions, health, budgets] = await Promise.all([
+        accsRes.json(), recentTxsRes.json(), monthTxsRes.json(), healthRes.json(), budgetsRes.json()
       ])
 
-      setData({ accounts, transactions, health, budgets })
+      setData({ accounts, transactions, monthTransactions, health, budgets })
 
       // Chart data: last 6 months
       const sixMonthsAgo = new Date()
@@ -154,21 +156,15 @@ export default function DashboardPage() {
 
   const accounts: Account[] = data?.accounts ?? []
   const transactions: Transaction[] = data?.transactions ?? []
+  const monthTransactions: Transaction[] = data?.monthTransactions ?? []
   const health = data?.health
   const budgets = data?.budgets ?? []
 
   const netWorth = accounts.reduce((s, a) => s + (a.type === 'credit' ? -a.balance : a.balance), 0)
 
-  const today = new Date()
-  const month = today.getMonth() + 1
-  const year = today.getFullYear()
-  const monthTxs = transactions.filter((t) => {
-    // Compare date strings directly to avoid timezone shifts on date-only values
-    const [y, m] = t.date.split('-').map(Number)
-    return m === month && y === year
-  })
-  const monthIncome = monthTxs.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-  const monthExpense = monthTxs.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
+  // Monthly stats from dedicated month fetch (not limited to recent 10)
+  const monthIncome = monthTransactions.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0)
+  const monthExpense = monthTransactions.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
 
   const containerVariants = {
     hidden: {},

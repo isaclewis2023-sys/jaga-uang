@@ -133,12 +133,14 @@ Access via `const { t } = useLanguage()` in client components.
 
 ## Last Updated
 
-2026-06-04 — Bug fix pass complete.
-- Fixed JWT fallback secret vulnerability (middleware.ts, auth.ts)
-- Fixed race conditions: transactions/balance, budget upsert, recurring processing all use db.batch()
-- Fixed accounts PATCH to whitelist allowed fields
-- Fixed recurring per-item error isolation
-- Fixed dashboard timezone bug in monthly transaction filter
-- Optimized health score budget loop (N+1 → single Map pass)
-- Added noRecurring translation key (id.ts, en.ts)
-- Replaced hardcoded strings with translation keys (goals, settings)
+2026-06-05 — Bug fix pass #2 complete.
+- Fixed `step="1000"/"10000"` on all number inputs (transactions, accounts, budget, goals) — values are now unrestricted
+- Fixed Goals "Add Funds" flow: now deducts from selected account + creates transaction record atomically
+- Fixed transfer API (transfers/route.ts) to use db.batch() — was not atomic before
+- Fixed transaction PATCH/DELETE APIs to use db.batch() — were not atomic before
+- Fixed timezone bug in getToday/getMonthStart/getMonthEnd/addMonths (utils.ts) — use local date instead of UTC
+- Fixed addMonths month-end overflow (Jan 31 + 1 = Feb 28, not Mar 3)
+- Fixed dashboard monthly stats: now fetches full month data separately from recent 10 transactions
+- Fixed transfer form: from/to dropdowns now filter out each other's selection
+- Added translation keys: transactions.requiredFields/saveFailed, accounts.deactivateConfirm/sameAccountError, goals.deleteConfirm/fromAccount/insufficientBalance/fundAdded
+- Added "Tabungan" default expense category to DEFAULT_CATEGORIES

@@ -85,6 +85,8 @@ const en = {
     deleteConfirm: 'Are you sure you want to delete this transaction?',
     noTransactions: 'No transactions yet',
     addFirst: 'Add your first transaction',
+    requiredFields: 'All fields are required',
+    saveFailed: 'Failed to save',
   },
   accounts: {
     title: 'Accounts',
@@ -107,6 +109,8 @@ const en = {
     to: 'To',
     noAccounts: 'No accounts yet',
     addFirst: 'Add your first account',
+    deactivateConfirm: 'Are you sure you want to deactivate this account?',
+    sameAccountError: 'Source and destination account cannot be the same',
   },
   reports: {
     title: 'Reports',
@@ -150,6 +154,10 @@ const en = {
     editGoal: 'Edit Goal',
     deleteGoal: 'Delete Goal',
     addFunds: 'Add Funds',
+    deleteConfirm: 'Are you sure you want to delete this goal?',
+    fromAccount: 'From Account',
+    insufficientBalance: 'Insufficient account balance',
+    fundAdded: 'Funds added successfully',
     name: 'Goal Name',
     target: 'Target',
     current: 'Collected',

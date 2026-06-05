@@ -1,14 +1,14 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Trash2, Edit2, PlusCircle } from 'lucide-react'
 import NeonCard from '@/components/matrix/NeonCard'
 import GlitchText from '@/components/matrix/GlitchText'
 import TerminalModal from '@/components/matrix/TerminalModal'
 import { useLanguage } from '@/hooks/useLanguage'
-import { formatIDR, getProgressPercentage, getDaysRemaining } from '@/lib/utils'
-import type { Goal } from '@/types'
+import { formatIDR, getProgressPercentage, getDaysRemaining, getToday } from '@/lib/utils'
+import type { Goal, Account } from '@/types'
 
 const GOAL_ICONS = ['🎯', '🏠', '🚗', '✈️', '💍', '📱', '💻', '📚', '🎓', '💰', '🏋️', '🌍']
 const COLORS = ['#00ff41', '#00e5ff', '#ffd700', '#ff6b6b', '#a29bfe', '#fd79a8', '#00b347', '#ff9f43']
@@ -126,17 +126,24 @@ function GoalForm({ initial, onSave, onClose, t }: {
 export default function GoalsPage() {
   const { t } = useLanguage()
   const [goals, setGoals] = useState<Goal[]>([])
+  const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<Goal | null>(null)
   const [addFundsGoal, setAddFundsGoal] = useState<Goal | null>(null)
   const [fundsAmount, setFundsAmount] = useState('')
+  const [fundsAccountId, setFundsAccountId] = useState('')
+  const [fundsDate, setFundsDate] = useState(getToday())
+  const [fundsAdding, setFundsAdding] = useState(false)
+  const [successMsg, setSuccessMsg] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const res = await fetch('/api/goals')
-    setGoals(await res.json())
+    const [goalsRes, accsRes] = await Promise.all([fetch('/api/goals'), fetch('/api/accounts')])
+    const [g, a] = await Promise.all([goalsRes.json(), accsRes.json()])
+    setGoals(g)
+    setAccounts(a)
     setLoading(false)
   }, [])
 
@@ -152,13 +159,29 @@ export default function GoalsPage() {
   }
 
   const handleAddFunds = async () => {
-    if (!addFundsGoal || !fundsAmount) return
-    await fetch(`/api/goals/${addFundsGoal.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ addFunds: Number(fundsAmount) }),
-    })
-    setAddFundsGoal(null); setFundsAmount(''); load()
+    if (!addFundsGoal || !fundsAmount || !fundsAccountId) return
+    setFundsAdding(true)
+    try {
+      const res = await fetch(`/api/goals/${addFundsGoal.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ addFunds: Number(fundsAmount), accountId: fundsAccountId, date: fundsDate }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        alert(err.error ?? t.common.error)
+        return
+      }
+      setAddFundsGoal(null)
+      setFundsAmount('')
+      setFundsAccountId('')
+      setFundsDate(getToday())
+      setSuccessMsg(t.goals.fundAdded)
+      setTimeout(() => setSuccessMsg(''), 3000)
+      load()
+    } finally {
+      setFundsAdding(false)
+    }
   }
 
   const handleDelete = async (id: string) => {
@@ -232,7 +255,7 @@ export default function GoalsPage() {
                             </div>
                           </div>
                           <button
-                            onClick={() => setAddFundsGoal(goal)}
+                            onClick={() => { setAddFundsGoal(goal); setFundsAmount(''); setFundsAccountId(''); setFundsDate(getToday()) }}
                             className="matrix-btn matrix-btn-sm matrix-btn-solid mt-2 w-full"
                           >
                             <PlusCircle size={11} /> {t.goals.addFunds}
@@ -271,28 +294,112 @@ export default function GoalsPage() {
         <GoalForm initial={editing} onSave={handleSave} onClose={() => { setShowModal(false); setEditing(null) }} t={t} />
       </TerminalModal>
 
-      <TerminalModal open={!!addFundsGoal} onClose={() => setAddFundsGoal(null)} title={`${t.goals.addFunds}: ${addFundsGoal?.icon} ${addFundsGoal?.name}`} maxWidth="max-w-sm">
+      <TerminalModal
+        open={!!addFundsGoal}
+        onClose={() => { setAddFundsGoal(null); setFundsAmount(''); setFundsAccountId(''); setFundsDate(getToday()) }}
+        title={`${t.goals.addFunds}: ${addFundsGoal?.icon} ${addFundsGoal?.name}`}
+        maxWidth="max-w-sm"
+      >
         <div className="space-y-3">
           <div>
-            <label className="matrix-label">{t.transactions.amount} (IDR)</label>
-            <input type="number" value={fundsAmount} onChange={(e) => setFundsAmount(e.target.value)} className="matrix-input" placeholder="0" min="1000" step="10000" autoFocus />
+            <label className="matrix-label">{t.goals.fromAccount}</label>
+            <select
+              value={fundsAccountId}
+              onChange={(e) => setFundsAccountId(e.target.value)}
+              className="matrix-input"
+              required
+              autoFocus
+            >
+              <option value="">Pilih akun</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.icon} {a.name} — {formatIDR(a.balance, true)}
+                </option>
+              ))}
+            </select>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="matrix-label">{t.transactions.amount} (IDR)</label>
+              <input
+                type="number"
+                value={fundsAmount}
+                onChange={(e) => setFundsAmount(e.target.value)}
+                className="matrix-input"
+                placeholder="0"
+                min="1"
+                step="1"
+              />
+            </div>
+            <div>
+              <label className="matrix-label">{t.transactions.date}</label>
+              <input
+                type="date"
+                value={fundsDate}
+                onChange={(e) => setFundsDate(e.target.value)}
+                className="matrix-input"
+                style={{ colorScheme: 'dark' }}
+              />
+            </div>
+          </div>
+          {/* Insufficient balance warning */}
+          {fundsAccountId && fundsAmount && (() => {
+            const acc = accounts.find((a) => a.id === fundsAccountId)
+            return acc && Number(fundsAmount) > acc.balance ? (
+              <motion.p
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="font-mono text-xs text-[#ff2055]"
+                style={{ fontFamily: 'JetBrains Mono, monospace' }}
+              >
+                &gt; {t.goals.insufficientBalance}
+              </motion.p>
+            ) : null
+          })()}
           <div className="flex gap-2">
-            <button onClick={() => setAddFundsGoal(null)} className="matrix-btn flex-1">{t.common.cancel}</button>
-            <button onClick={handleAddFunds} disabled={!fundsAmount} className="matrix-btn matrix-btn-solid flex-1" style={{ opacity: !fundsAmount ? 0.5 : 1 }}>
-              &gt; {t.goals.addFunds}
+            <button
+              onClick={() => { setAddFundsGoal(null); setFundsAmount(''); setFundsAccountId(''); setFundsDate(getToday()) }}
+              className="matrix-btn flex-1"
+            >
+              {t.common.cancel}
+            </button>
+            <button
+              onClick={handleAddFunds}
+              disabled={!fundsAmount || !fundsAccountId || fundsAdding || (() => {
+                const acc = accounts.find((a) => a.id === fundsAccountId)
+                return acc ? Number(fundsAmount) > acc.balance : false
+              })()}
+              className="matrix-btn matrix-btn-solid flex-1"
+              style={{ opacity: (!fundsAmount || !fundsAccountId || fundsAdding) ? 0.5 : 1 }}
+            >
+              {fundsAdding ? '> MENYIMPAN...' : `> ${t.goals.addFunds}`}
             </button>
           </div>
         </div>
       </TerminalModal>
 
       <TerminalModal open={!!deletingId} onClose={() => setDeletingId(null)} title={t.goals.deleteGoal} maxWidth="max-w-sm">
-        <p className="font-mono text-sm text-[#c8ffc8] mb-4" style={{ fontFamily: 'JetBrains Mono, monospace' }}>Yakin ingin menghapus tujuan ini?</p>
+        <p className="font-mono text-sm text-[#c8ffc8] mb-4" style={{ fontFamily: 'JetBrains Mono, monospace' }}>{t.goals.deleteConfirm}</p>
         <div className="flex gap-2">
           <button onClick={() => setDeletingId(null)} className="matrix-btn flex-1">{t.common.cancel}</button>
           <button onClick={() => deletingId && handleDelete(deletingId)} className="matrix-btn matrix-btn-danger flex-1">{t.common.delete}</button>
         </div>
       </TerminalModal>
+
+      {/* Success toast */}
+      <AnimatePresence>
+        {successMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-6 right-6 z-50 px-4 py-2 rounded border border-[rgba(0,255,65,0.4)] bg-[rgba(0,20,0,0.95)] font-mono text-sm text-[#00ff41] text-glow"
+            style={{ fontFamily: 'JetBrains Mono, monospace', boxShadow: '0 0 20px rgba(0,255,65,0.2)' }}
+          >
+            ✓ {successMsg}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

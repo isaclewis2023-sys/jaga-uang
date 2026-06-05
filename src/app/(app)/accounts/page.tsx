@@ -55,7 +55,7 @@ function AccountForm({ initial, onSave, onClose, t }: {
         </div>
         <div>
           <label className="matrix-label">{t.accounts.balance} (IDR)</label>
-          <input type="number" value={form.balance} onChange={(e) => setForm((f) => ({ ...f, balance: e.target.value }))} className="matrix-input" step="1000" required />
+          <input type="number" value={form.balance} onChange={(e) => setForm((f) => ({ ...f, balance: e.target.value }))} className="matrix-input" step="1" required />
         </div>
       </div>
       <div>
@@ -212,14 +212,14 @@ export default function AccountsPage() {
               <label className="matrix-label">{t.accounts.from}</label>
               <select value={transfer.fromAccountId} onChange={(e) => setTransfer((f) => ({ ...f, fromAccountId: e.target.value }))} className="matrix-input" required>
                 <option value="">Pilih</option>
-                {accounts.map((a) => <option key={a.id} value={a.id}>{a.icon} {a.name}</option>)}
+                {accounts.filter((a) => a.id !== transfer.toAccountId).map((a) => <option key={a.id} value={a.id}>{a.icon} {a.name}</option>)}
               </select>
             </div>
             <div>
               <label className="matrix-label">{t.accounts.to}</label>
               <select value={transfer.toAccountId} onChange={(e) => setTransfer((f) => ({ ...f, toAccountId: e.target.value }))} className="matrix-input" required>
                 <option value="">Pilih</option>
-                {accounts.map((a) => <option key={a.id} value={a.id}>{a.icon} {a.name}</option>)}
+                {accounts.filter((a) => a.id !== transfer.fromAccountId).map((a) => <option key={a.id} value={a.id}>{a.icon} {a.name}</option>)}
               </select>
             </div>
           </div>
@@ -248,7 +248,7 @@ export default function AccountsPage() {
 
       {/* Delete confirm */}
       <TerminalModal open={!!deletingId} onClose={() => setDeletingId(null)} title={t.accounts.deleteAccount} maxWidth="max-w-sm">
-        <p className="font-mono text-sm text-[#c8ffc8] mb-4" style={{ fontFamily: 'JetBrains Mono, monospace' }}>Yakin ingin menonaktifkan akun ini?</p>
+        <p className="font-mono text-sm text-[#c8ffc8] mb-4" style={{ fontFamily: 'JetBrains Mono, monospace' }}>{t.accounts.deactivateConfirm}</p>
         <div className="flex gap-2">
           <button onClick={() => setDeletingId(null)} className="matrix-btn flex-1">{t.common.cancel}</button>
           <button onClick={() => deletingId && handleDelete(deletingId)} className="matrix-btn matrix-btn-danger flex-1">{t.common.delete}</button>

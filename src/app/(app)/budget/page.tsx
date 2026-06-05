@@ -175,7 +175,7 @@ export default function BudgetPage() {
           </div>
           <div>
             <label className="matrix-label">{t.budget.limit} (IDR)</label>
-            <input type="number" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} className="matrix-input" min="1000" step="10000" required />
+            <input type="number" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} className="matrix-input" min="1" step="1" required />
           </div>
           <div className="flex gap-2">
             <button type="button" onClick={() => setShowModal(false)} className="matrix-btn flex-1">{t.common.cancel}</button>
