@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useLanguage } from '@/hooks/useLanguage'
 import { cn } from '@/lib/utils'
+import QuickAddFAB from '@/components/QuickAddFAB'
 
 const NAV_ITEMS = [
   { key: 'dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -192,6 +193,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </AnimatePresence>
         </main>
       </div>
+
+      {/* Quick Add FAB */}
+      <QuickAddFAB />
 
       {/* Bottom nav — mobile */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-20 matrix-panel border-t border-[rgba(0,255,65,0.12)] flex">

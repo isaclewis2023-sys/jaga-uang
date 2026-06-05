@@ -31,7 +31,8 @@ src/
 │   └── api/             — REST API routes
 ├── components/
 │   ├── matrix/          — MatrixRain, GlitchText, NeonCard, CounterNumber, TerminalModal
-│   └── AppShell.tsx     — sidebar + mobile bottom nav
+│   ├── AppShell.tsx     — sidebar + mobile bottom nav + QuickAddFAB mount
+│   └── QuickAddFAB.tsx  — floating quick-add button (all app pages)
 ├── lib/
 │   ├── db/schema.ts     — Drizzle table definitions
 │   ├── db/index.ts      — Turso client singleton
@@ -131,7 +132,37 @@ Access via `const { t } = useLanguage()` in client components.
 - Budget upsert (delete+insert) is atomic via `db.batch()`
 - Recurring rule processing: each rule runs in its own try/catch — one failure won't block others
 
+## New API Routes (Feature Pass #1)
+
+- `GET /api/transactions/check-duplicate` — duplicate detection: `?amount=&description=&date=&excludeId=`, returns matching transactions within ±3 days
+- `GET /api/export/csv` — CSV/Excel export: `?format=csv|xlsx&startDate=&endDate=&type=`, ikut filter aktif
+- `GET /api/networth` — net worth history: `?startDate=&endDate=`, returns `{ snapshots, accounts }` calculated from transaction history
+- `GET /api/export` — original JSON full-dump (unchanged)
+
+## New Dependencies
+
+- `xlsx` (SheetJS) — Excel export via `/api/export/csv?format=xlsx`
+
+## QuickAddFAB Pattern
+
+`QuickAddFAB` is mounted inside `AppShell` so it appears on all app pages. It dispatches `window.dispatchEvent(new Event('transaction:added'))` after a successful save. Pages that show transactions should listen for this event and reload data:
+```ts
+useEffect(() => {
+  const handler = () => load()
+  window.addEventListener('transaction:added', handler)
+  return () => window.removeEventListener('transaction:added', handler)
+}, [load])
+```
+
 ## Last Updated
+
+2026-06-05 — Feature pass #1 complete.
+- Added Quick-Add FAB (`QuickAddFAB.tsx`) — floating button on all pages, spring-animated panel, toast on save
+- Added date range filter to transactions page — preset chips (Today/7d/This Month/Last Month/Custom) + summary bar
+- Added duplicate detection — debounced check in TransactionForm and QuickAddFAB, yellow warning inline
+- Added CSV/Excel export — `/api/export/csv`, dropdown in transactions header, respects active filters
+- Added Net Worth History — `/api/networth` API + tab in Reports page (area chart + account breakdown) + sparkline in Dashboard
+- Added `xlsx` dependency for Excel export
 
 2026-06-05 — Bug fix pass #2 complete.
 - Fixed `step="1000"/"10000"` on all number inputs (transactions, accounts, budget, goals) — values are now unrestricted

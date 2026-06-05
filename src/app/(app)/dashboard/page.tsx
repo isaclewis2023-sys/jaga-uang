@@ -4,10 +4,11 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   TrendingUp, TrendingDown, Wallet, Activity,
-  ArrowUpRight, ArrowDownRight, RefreshCw, Plus
+  RefreshCw, Plus
 } from 'lucide-react'
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line
 } from 'recharts'
 import { motion } from 'framer-motion'
 import NeonCard from '@/components/matrix/NeonCard'
@@ -16,6 +17,8 @@ import GlitchText from '@/components/matrix/GlitchText'
 import { useLanguage } from '@/hooks/useLanguage'
 import { formatIDR, formatDate, getMonthStart, getMonthEnd, getHealthColor, getProgressPercentage } from '@/lib/utils'
 import type { Account, Transaction } from '@/types'
+
+interface NwSnapshot { date: string; netWorth: number }
 
 interface DashboardData {
   accounts: Account[]
@@ -104,6 +107,7 @@ export default function DashboardPage() {
   const router = useRouter()
   const [data, setData] = useState<DashboardData | null>(null)
   const [chartData, setChartData] = useState<Array<{ month: string; income: number; expense: number }>>([])
+  const [nwSparkline, setNwSparkline] = useState<NwSnapshot[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
@@ -113,19 +117,26 @@ export default function DashboardPage() {
       const startDate = getMonthStart(today.getFullYear(), today.getMonth() + 1)
       const endDate = getMonthEnd(today.getFullYear(), today.getMonth() + 1)
 
-      const [accsRes, recentTxsRes, monthTxsRes, healthRes, budgetsRes] = await Promise.all([
+      // 30-day window for sparkline
+      const d30 = new Date()
+      d30.setDate(d30.getDate() - 29)
+      const sparkStart = `${d30.getFullYear()}-${String(d30.getMonth()+1).padStart(2,'0')}-${String(d30.getDate()).padStart(2,'0')}`
+
+      const [accsRes, recentTxsRes, monthTxsRes, healthRes, budgetsRes, nwRes] = await Promise.all([
         fetch('/api/accounts'),
         fetch('/api/transactions?limit=10'),
         fetch(`/api/transactions?startDate=${startDate}&endDate=${endDate}&limit=500`),
         fetch('/api/health'),
         fetch(`/api/budget?month=${today.getMonth() + 1}&year=${today.getFullYear()}`),
+        fetch(`/api/networth?startDate=${sparkStart}&endDate=${startDate.slice(0,7)+'-'+String(new Date(today.getFullYear(), today.getMonth()+1, 0).getDate()).padStart(2,'0')}`),
       ])
 
-      const [accounts, transactions, monthTransactions, health, budgets] = await Promise.all([
-        accsRes.json(), recentTxsRes.json(), monthTxsRes.json(), healthRes.json(), budgetsRes.json()
+      const [accounts, transactions, monthTransactions, health, budgets, nwRaw] = await Promise.all([
+        accsRes.json(), recentTxsRes.json(), monthTxsRes.json(), healthRes.json(), budgetsRes.json(), nwRes.json()
       ])
 
       setData({ accounts, transactions, monthTransactions, health, budgets })
+      setNwSparkline(Array.isArray(nwRaw?.snapshots) ? nwRaw.snapshots : [])
 
       // Chart data: last 6 months
       const sixMonthsAgo = new Date()
@@ -197,14 +208,37 @@ export default function DashboardPage() {
       </div>
 
       {/* Net Worth */}
-      <NeonCard className="p-5 text-center" glow>
-        <p className="matrix-label mb-2">{t.dashboard.netWorth}</p>
-        <div className="text-3xl sm:text-4xl font-bold font-mono text-glow" style={{ fontFamily: 'JetBrains Mono, monospace', color: netWorth >= 0 ? '#00ff41' : '#ff2055' }}>
-          <CounterNumber value={netWorth} currency duration={1200} />
+      <NeonCard className="p-5" glow>
+        <div className="flex items-start justify-between gap-4">
+          <div className="text-center flex-1">
+            <p className="matrix-label mb-2">{t.dashboard.netWorth}</p>
+            <div className="text-3xl sm:text-4xl font-bold font-mono text-glow" style={{ fontFamily: 'JetBrains Mono, monospace', color: netWorth >= 0 ? '#00ff41' : '#ff2055' }}>
+              <CounterNumber value={netWorth} currency duration={1200} />
+            </div>
+            <p className="text-[#3a5c3a] font-mono text-xs mt-1" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              {accounts.length} {t.accounts.title.toLowerCase()}
+            </p>
+          </div>
+          {nwSparkline.length > 1 && (() => {
+            const first = nwSparkline[0].netWorth
+            const last = nwSparkline[nwSparkline.length - 1].netWorth
+            const delta = last - first
+            const sparkColor = delta >= 0 ? '#00ff41' : '#ff2055'
+            return (
+              <div className="flex flex-col items-end gap-1 min-w-[110px]">
+                <p className="matrix-label text-[0.55rem]">{t.dashboard.netWorthTrend} (30d)</p>
+                <ResponsiveContainer width={110} height={40}>
+                  <LineChart data={nwSparkline}>
+                    <Line type="monotone" dataKey="netWorth" stroke={sparkColor} strokeWidth={1.5} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+                <p className="font-mono text-xs font-semibold" style={{ fontFamily: 'JetBrains Mono, monospace', color: sparkColor }}>
+                  {delta >= 0 ? '▲' : '▼'} {formatIDR(Math.abs(delta), true)}
+                </p>
+              </div>
+            )
+          })()}
         </div>
-        <p className="text-[#3a5c3a] font-mono text-xs mt-1" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-          {accounts.length} {t.accounts.title.toLowerCase()}
-        </p>
       </NeonCard>
 
       {/* Stats grid */}

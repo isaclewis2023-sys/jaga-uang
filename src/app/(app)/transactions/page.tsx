@@ -1,20 +1,81 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Search, Filter, Trash2, Edit2, X, ChevronDown } from 'lucide-react'
+import { Plus, Search, Trash2, Edit2, Download, ChevronDown, AlertTriangle } from 'lucide-react'
 import NeonCard from '@/components/matrix/NeonCard'
 import GlitchText from '@/components/matrix/GlitchText'
 import TerminalModal from '@/components/matrix/TerminalModal'
 import { useLanguage } from '@/hooks/useLanguage'
-import { formatIDR, formatDate, getToday } from '@/lib/utils'
+import { formatIDR, formatDate, getToday, getMonthStart, getMonthEnd } from '@/lib/utils'
 import type { Transaction, Account, Category } from '@/types'
 
-const ICONS_INCOME = ['💼', '💻', '📈', '🎁', '💰', '🏆', '🌟']
-const ICONS_EXPENSE = ['🍽️', '🚗', '🛒', '🔌', '🏥', '🎮', '📚', '📱', '✈️', '💄', '🏋️']
+// ─── Date range helpers ───────────────────────────────────────────────────────
+
+type DatePreset = 'today' | '7d' | 'month' | 'lastmonth' | 'custom'
+
+function getPresetDates(preset: DatePreset): { start: string; end: string } {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = now.getMonth() + 1
+  switch (preset) {
+    case 'today': {
+      const t = getToday()
+      return { start: t, end: t }
+    }
+    case '7d': {
+      const end = getToday()
+      const d = new Date(now)
+      d.setDate(d.getDate() - 6)
+      const start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      return { start, end }
+    }
+    case 'month':
+      return { start: getMonthStart(y, m), end: getMonthEnd(y, m) }
+    case 'lastmonth': {
+      const lm = m === 1 ? 12 : m - 1
+      const ly = m === 1 ? y - 1 : y
+      return { start: getMonthStart(ly, lm), end: getMonthEnd(ly, lm) }
+    }
+    default:
+      return { start: getMonthStart(y, m), end: getMonthEnd(y, m) }
+  }
+}
+
+// ─── Duplicate warning hook ───────────────────────────────────────────────────
+
+function useDuplicateCheck(amount: string, description: string, date: string, excludeId?: string) {
+  const [duplicates, setDuplicates] = useState<Transaction[]>([])
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    const num = Number(amount)
+    if (!num || description.length < 3 || !date) {
+      setDuplicates([])
+      return
+    }
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ amount: String(num), description, date })
+        if (excludeId) params.set('excludeId', excludeId)
+        const res = await fetch(`/api/transactions/check-duplicate?${params}`)
+        const data = await res.json()
+        setDuplicates(Array.isArray(data) ? data : [])
+      } catch {
+        setDuplicates([])
+      }
+    }, 500)
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
+  }, [amount, description, date, excludeId])
+
+  return duplicates
+}
+
+// ─── Transaction Form ─────────────────────────────────────────────────────────
 
 function TransactionForm({
-  initial, accounts, categories, onSave, onClose
+  initial, accounts, categories, onSave, onClose,
 }: {
   initial?: Transaction | null
   accounts: Account[]
@@ -22,7 +83,7 @@ function TransactionForm({
   onSave: (data: Partial<Transaction>) => Promise<void>
   onClose: () => void
 }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const [form, setForm] = useState({
     type: initial?.type ?? 'expense' as 'income' | 'expense',
     accountId: initial?.accountId ?? (accounts[0]?.id ?? ''),
@@ -35,6 +96,7 @@ function TransactionForm({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  const duplicates = useDuplicateCheck(form.amount, form.description, form.date, initial?.id)
   const filteredCategories = categories.filter((c) => c.type === form.type)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -46,7 +108,7 @@ function TransactionForm({
     }
     setSaving(true)
     try {
-      await onSave({ ...form, amount: Number(form.amount.replace(/\./g, '').replace(',', '.')) })
+      await onSave({ ...form, amount: Number(form.amount) })
     } catch {
       setError(t.transactions.saveFailed)
     } finally {
@@ -116,6 +178,30 @@ function TransactionForm({
         />
       </div>
 
+      {/* Duplicate warning */}
+      <AnimatePresence>
+        {duplicates.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            className="flex items-start gap-2 p-2 rounded border border-[rgba(255,215,0,0.3)] bg-[rgba(255,215,0,0.05)]"
+          >
+            <AlertTriangle size={13} className="text-[#ffd700] mt-0.5 shrink-0" />
+            <div>
+              <p className="font-mono text-xs text-[#ffd700]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                {t.transactions.duplicateWarning}:
+              </p>
+              {duplicates.map((d) => (
+                <p key={d.id} className="font-mono text-[0.65rem] text-[#b8a000] mt-0.5" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                  · {d.description} — {formatDate(d.date, 'dd MMM yyyy', lang)} — {formatIDR(d.amount)}
+                </p>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="matrix-label">{t.transactions.account}</label>
@@ -158,7 +244,11 @@ function TransactionForm({
         />
       </div>
 
-      {error && <p className="text-[#ff2055] font-mono text-xs text-glow-red" style={{ fontFamily: 'JetBrains Mono, monospace' }}>&gt; {error}</p>}
+      {error && (
+        <p className="text-[#ff2055] font-mono text-xs text-glow-red" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+          &gt; {error}
+        </p>
+      )}
 
       <div className="flex gap-2 pt-1">
         <button type="button" onClick={onClose} className="matrix-btn flex-1">{t.common.cancel}</button>
@@ -170,41 +260,125 @@ function TransactionForm({
   )
 }
 
+// ─── Export Dropdown ──────────────────────────────────────────────────────────
+
+function ExportDropdown({ startDate, endDate, type }: { startDate: string; endDate: string; type: string }) {
+  const { t } = useLanguage()
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const buildUrl = (format: string) => {
+    const p = new URLSearchParams({ format })
+    if (startDate) p.set('startDate', startDate)
+    if (endDate) p.set('endDate', endDate)
+    if (type !== 'all') p.set('type', type)
+    return `/api/export/csv?${p}`
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="matrix-btn matrix-btn-sm flex items-center gap-1"
+      >
+        <Download size={12} />
+        {t.transactions.export}
+        <ChevronDown size={10} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.97 }}
+            transition={{ duration: 0.12 }}
+            className="absolute right-0 top-full mt-1 z-50 matrix-panel border border-[rgba(0,255,65,0.2)] rounded min-w-[150px] py-1"
+          >
+            {[
+              { label: t.transactions.exportCSV, fmt: 'csv' },
+              { label: t.transactions.exportExcel, fmt: 'xlsx' },
+            ].map(({ label, fmt }) => (
+              <a
+                key={fmt}
+                href={buildUrl(fmt)}
+                download
+                onClick={() => setOpen(false)}
+                className="block px-3 py-2 font-mono text-xs text-[#c8ffc8] hover:bg-[rgba(0,255,65,0.08)] hover:text-[#00ff41] transition-colors"
+                style={{ fontFamily: 'JetBrains Mono, monospace' }}
+              >
+                {label}
+              </a>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
 export default function TransactionsPage() {
   const { t, lang } = useLanguage()
-  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [txList, setTxList] = useState<Transaction[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all')
+  const [preset, setPreset] = useState<DatePreset>('month')
+  const [customRange, setCustomRange] = useState({ start: getMonthStart(), end: getMonthEnd() })
+  const [showCustom, setShowCustom] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<Transaction | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [page, setPage] = useState(0)
-  const PER_PAGE = 20
+
+  const dateRange = preset === 'custom' ? customRange : getPresetDates(preset)
 
   const load = useCallback(async () => {
     setLoading(true)
+    const params = new URLSearchParams({ limit: '500' })
+    if (dateRange.start) params.set('startDate', dateRange.start)
+    if (dateRange.end) params.set('endDate', dateRange.end)
+    if (filterType !== 'all') params.set('type', filterType)
+
     const [txRes, accRes, catRes] = await Promise.all([
-      fetch(`/api/transactions?limit=200&offset=${page * PER_PAGE}`),
+      fetch(`/api/transactions?${params}`),
       fetch('/api/accounts'),
       fetch('/api/categories'),
     ])
     const [txs, accs, cats] = await Promise.all([txRes.json(), accRes.json(), catRes.json()])
-    setTransactions(txs)
-    setAccounts(accs)
-    setCategories(cats)
+    setTxList(Array.isArray(txs) ? txs : [])
+    setAccounts(Array.isArray(accs) ? accs : [])
+    setCategories(Array.isArray(cats) ? cats : [])
     setLoading(false)
-  }, [page])
+  }, [dateRange.start, dateRange.end, filterType])
 
   useEffect(() => { load() }, [load])
 
-  const filtered = transactions.filter((tx) => {
-    if (filterType !== 'all' && tx.type !== filterType) return false
+  // Listen for quick-add FAB events
+  useEffect(() => {
+    const handler = () => load()
+    window.addEventListener('transaction:added', handler)
+    return () => window.removeEventListener('transaction:added', handler)
+  }, [load])
+
+  const filtered = txList.filter((tx) => {
     if (search && !tx.description.toLowerCase().includes(search.toLowerCase())) return false
     return true
   })
+
+  const summaryIncome = filtered.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0)
+  const summaryExpense = filtered.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
+  const summaryNet = summaryIncome - summaryExpense
 
   const handleSave = async (data: Partial<Transaction>) => {
     if (editing) {
@@ -219,6 +393,7 @@ export default function TransactionsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       })
+      window.dispatchEvent(new Event('transaction:added'))
     }
     setShowModal(false)
     setEditing(null)
@@ -231,21 +406,81 @@ export default function TransactionsPage() {
     load()
   }
 
+  const presets: Array<{ key: DatePreset; label: string }> = [
+    { key: 'today', label: t.transactions.today },
+    { key: '7d', label: t.transactions.last7Days },
+    { key: 'month', label: t.transactions.thisMonth },
+    { key: 'lastmonth', label: t.transactions.lastMonth },
+    { key: 'custom', label: t.transactions.customRange },
+  ]
+
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <GlitchText text={t.transactions.title} tag="h1" className="text-xl font-bold font-mono tracking-wider" style={{ fontFamily: 'JetBrains Mono, monospace' } as React.CSSProperties} />
-        <motion.button
-          onClick={() => { setEditing(null); setShowModal(true) }}
-          className="matrix-btn matrix-btn-solid"
-          whileTap={{ scale: 0.97 }}
-        >
-          <Plus size={13} /> {t.transactions.addTransaction}
-        </motion.button>
+      <div className="flex items-center justify-between gap-3">
+        <GlitchText
+          text={t.transactions.title}
+          tag="h1"
+          className="text-xl font-bold font-mono tracking-wider"
+          style={{ fontFamily: 'JetBrains Mono, monospace' } as React.CSSProperties}
+        />
+        <div className="flex items-center gap-2">
+          <ExportDropdown startDate={dateRange.start} endDate={dateRange.end} type={filterType} />
+          <motion.button
+            onClick={() => { setEditing(null); setShowModal(true) }}
+            className="matrix-btn matrix-btn-solid"
+            whileTap={{ scale: 0.97 }}
+          >
+            <Plus size={13} /> {t.transactions.addTransaction}
+          </motion.button>
+        </div>
       </div>
 
-      {/* Filters */}
+      {/* Date range filter */}
+      <NeonCard className="p-3 space-y-2" animate={false}>
+        <div className="flex flex-wrap gap-1.5">
+          {presets.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => {
+                setPreset(key)
+                setShowCustom(key === 'custom')
+              }}
+              className={`matrix-btn matrix-btn-sm ${preset === key ? 'matrix-btn-solid' : ''}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <AnimatePresence>
+          {showCustom && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="flex flex-wrap gap-2 items-center overflow-hidden"
+            >
+              <input
+                type="date"
+                value={customRange.start}
+                onChange={(e) => setCustomRange((c) => ({ ...c, start: e.target.value }))}
+                className="matrix-input text-xs"
+                style={{ width: 140, colorScheme: 'dark' }}
+              />
+              <span className="text-[#3a5c3a] font-mono text-xs" style={{ fontFamily: 'JetBrains Mono, monospace' }}>—</span>
+              <input
+                type="date"
+                value={customRange.end}
+                onChange={(e) => setCustomRange((c) => ({ ...c, end: e.target.value }))}
+                className="matrix-input text-xs"
+                style={{ width: 140, colorScheme: 'dark' }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </NeonCard>
+
+      {/* Search + type filter */}
       <NeonCard className="p-3 flex flex-wrap items-center gap-3" animate={false}>
         <div className="relative flex-1 min-w-[160px]">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#3a5c3a]" />
@@ -269,6 +504,28 @@ export default function TransactionsPage() {
           ))}
         </div>
       </NeonCard>
+
+      {/* Summary bar */}
+      {!loading && filtered.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="grid grid-cols-3 gap-2"
+        >
+          {[
+            { label: t.transactions.income, value: summaryIncome, color: '#00ff41' },
+            { label: t.transactions.expense, value: summaryExpense, color: '#ff2055' },
+            { label: 'Net', value: summaryNet, color: summaryNet >= 0 ? '#00ff41' : '#ff2055' },
+          ].map(({ label, value, color }) => (
+            <NeonCard key={label} className="p-2.5 text-center" animate={false}>
+              <p className="matrix-label text-[0.55rem] mb-1">{label}</p>
+              <p className="font-mono font-bold text-xs" style={{ color, fontFamily: 'JetBrains Mono, monospace' }}>
+                {value >= 0 ? '' : '-'}{formatIDR(Math.abs(value), true)}
+              </p>
+            </NeonCard>
+          ))}
+        </motion.div>
+      )}
 
       {/* Table */}
       <NeonCard className="p-4" animate={false}>
@@ -301,7 +558,7 @@ export default function TransactionsPage() {
                       initial={{ opacity: 0, x: -4 }}
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: 4 }}
-                      transition={{ delay: i * 0.02 }}
+                      transition={{ delay: Math.min(i * 0.02, 0.3) }}
                     >
                       <td className="text-[#3a5c3a] font-mono text-xs whitespace-nowrap" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
                         {formatDate(tx.date, 'dd MMM yy', lang)}
@@ -344,6 +601,9 @@ export default function TransactionsPage() {
                 </AnimatePresence>
               </tbody>
             </table>
+            <p className="text-[#3a5c3a] font-mono text-[0.6rem] mt-2 text-right" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              {filtered.length} transaksi
+            </p>
           </div>
         )}
       </NeonCard>
