@@ -143,6 +143,20 @@ Access via `const { t } = useLanguage()` in client components.
 
 - `xlsx` (SheetJS) — Excel export via `/api/export/csv?format=xlsx`
 
+## ARIA AI Helper (/ai)
+
+Full-page AI assistant powered by Claude Haiku. Architecture:
+- `src/app/(app)/ai/page.tsx` — chat UI with boot sequence + transaction confirm flow
+- `src/components/AriaFace.tsx` — SVG human-like face with Framer Motion expressions (idle/thinking/talking/happy/sad/surprised/warning), natural blink loop, pupil darting
+- `src/app/api/ai/context/route.ts` — GET, aggregates all financial data (accounts, transactions, budgets, goals) into a single context object for the AI
+- `src/app/api/ai/chat/route.ts` — POST, streams Claude Haiku responses via SSE, injects financial context into system prompt
+
+**Requires `ANTHROPIC_API_KEY`** in `.env.local` — app works without it but AI responses will fail.
+
+Transaction confirmation flow: AI embeds `<transaction_confirm>{...}</transaction_confirm>` in response → UI shows confirm card → on confirm, calls existing `/api/transactions` POST (atomic, same as manual entry).
+
+Expression detection: keywords in AI response text automatically set face expression. `window.dispatchEvent(new Event('transaction:added'))` fired after AI-confirmed transaction.
+
 ## QuickAddFAB Pattern
 
 `QuickAddFAB` is mounted inside `AppShell` so it appears on all app pages. It dispatches `window.dispatchEvent(new Event('transaction:added'))` after a successful save. Pages that show transactions should listen for this event and reload data:
@@ -155,6 +169,15 @@ useEffect(() => {
 ```
 
 ## Last Updated
+
+2026-06-05 — Feature pass #2: ARIA AI Helper complete.
+- Added ARIA AI Helper page (/ai) — full-page chat with boot sequence animation
+- Added AriaFace.tsx — SVG human-like face with 7 expressions, natural blink, pupil darting, CRT scanline overlay
+- Added /api/ai/context — aggregates all financial data for AI context
+- Added /api/ai/chat — streaming Claude Haiku via SSE with financial system prompt
+- Added transaction confirmation flow — AI proposes, user confirms, uses existing atomic /api/transactions POST
+- Added Bot icon to sidebar nav + mobile bottom nav (replaces reports in mobile bottom nav)
+- Added ANTHROPIC_API_KEY to .env.example
 
 2026-06-05 — Feature pass #1 complete.
 - Added Quick-Add FAB (`QuickAddFAB.tsx`) — floating button on all pages, spring-animated panel, toast on save

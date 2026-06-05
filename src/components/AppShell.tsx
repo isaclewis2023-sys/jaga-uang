@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, ArrowLeftRight, Wallet, BarChart3,
   Target, PiggyBank, Settings, LogOut, ChevronLeft,
-  ChevronRight, Globe, Terminal
+  ChevronRight, Globe, Terminal, Bot
 } from 'lucide-react'
 import { useLanguage } from '@/hooks/useLanguage'
 import { cn } from '@/lib/utils'
@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { key: 'reports', href: '/reports', icon: BarChart3 },
   { key: 'budget', href: '/budget', icon: PiggyBank },
   { key: 'goals', href: '/goals', icon: Target },
+  { key: 'ai', href: '/ai', icon: Bot },
   { key: 'settings', href: '/settings', icon: Settings },
 ] as const
 
@@ -42,6 +43,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     reports: t.nav.reports,
     budget: t.nav.budget,
     goals: t.nav.goals,
+    ai: 'ARIA',
     settings: t.nav.settings,
   }
 
@@ -199,7 +201,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Bottom nav — mobile */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-20 matrix-panel border-t border-[rgba(0,255,65,0.12)] flex">
-        {NAV_ITEMS.filter((n) => ['dashboard','transactions','accounts','reports','settings'].includes(n.key)).map(
+        {NAV_ITEMS.filter((n) => ['dashboard','transactions','accounts','ai','settings'].includes(n.key)).map(
           ({ key, href, icon: Icon }) => {
             const active = pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
             return (
